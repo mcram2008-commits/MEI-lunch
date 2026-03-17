@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { GlobalStore, Pass, User, Student } from "@/lib/store";
 import { Html5QrcodeScanner } from "html5-qrcode";
 import {
-    ShieldCheck, QrCode, ScanLines, LogOut, CheckCircle, XCircle,
+    ShieldCheck, QrCode, Scan, LogOut, CheckCircle, XCircle,
     User as UserIcon, Clock, ChevronRight, Menu, X, ShieldAlert,
     Camera, History, CheckCircle2
 } from "lucide-react";
@@ -103,7 +103,7 @@ export default function WatchmanPortal() {
                     <section className="space-y-8">
                         <div className="bg-white rounded-[3rem] p-10 shadow-2xl border-4 border-white relative overflow-hidden group">
                             <div className="absolute top-0 right-0 bg-[#1e3a8a] text-white px-8 py-3 rounded-bl-3xl font-black text-[10px] uppercase tracking-widest flex items-center gap-2">
-                                <ScanLines size={14} className="animate-pulse" /> LIVE SCANNER
+                                <Scan size={14} className="animate-pulse" /> LIVE SCANNER
                             </div>
                             
                             <h2 className="text-2xl font-black text-[#1e3a8a] uppercase tracking-tighter mb-8 italic">Authentication Node</h2>
