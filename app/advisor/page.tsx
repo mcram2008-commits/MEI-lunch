@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { GlobalStore, MOCK_STUDENTS, Pass, Advisor, Student } from "@/lib/store";
 import {
     Menu, X, ShieldAlert, UserCheck, Inbox, LogOut,
-    User, CheckCircle, Clock, Calendar, ArrowLeft, Trash2, History
+    User, CheckCircle, Clock, Calendar, ArrowLeft, Trash2, History, AlertTriangle
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
@@ -12,11 +12,10 @@ export default function AdvisorPortal() {
     const [advisor, setAdvisor] = useState<Advisor | null>(null);
     const [requests, setRequests] = useState<Pass[]>([]);
     const [historyRequests, setHistoryRequests] = useState<Pass[]>([]);
-    const [latePasses, setLatePasses] = useState<Pass[]>([]);
     const [notEntryPasses, setNotEntryPasses] = useState<Pass[]>([]);
     const [duplicatePasses, setDuplicatePasses] = useState<Pass[]>([]);
     const [isMenuOpen, setIsMenuOpen] = useState(false);
-    const [activeTab, setActiveTab] = useState<"pending" | "profile" | "history" | "late">("pending");
+    const [activeTab, setActiveTab] = useState<"pending" | "profile" | "history" | "security">("pending");
     const router = useRouter();
 
     useEffect(() => {
@@ -56,7 +55,15 @@ export default function AdvisorPortal() {
                 
                 return p.scannedOutAt && !p.scannedInAt;
             });
-            setNotEntryPasses(notEntry);
+            setNotEntryPasses(notEntry.filter(p => {
+                // Return only those who are actually overdue (passed their endTime by some time)
+                if (!p.endTime) return false;
+                const [h, m] = p.endTime.split(":").map(Number);
+                const end = new Date();
+                end.setHours(h, m, 0);
+                const diff = (now.getTime() - end.getTime()) / (1000 * 60 * 60);
+                return diff > 0;
+            }));
 
             // Duplicate Entry: Students with multiple passes on the same day
             const studentsWithPasses = allPasses.filter(p => {
@@ -75,9 +82,6 @@ export default function AdvisorPortal() {
 
             const duplicates = Object.values(dateStudentMap).filter(group => group.length > 1).flat();
             setDuplicatePasses(duplicates);
-
-            // Keep the old latePasses for compatibility with any existing UI refs, but we'll show new lists
-            setLatePasses(notEntry); 
         };
         update();
         return GlobalStore.subscribe(update);
@@ -95,8 +99,9 @@ export default function AdvisorPortal() {
         if (student && advisor) {
             if (response === "not") {
                 const message = `Security Alert: Student ${student.name} (${student.rollNo}) has NOT returned by the lunch deadline (${pass.endTime}). Please contact immediately.`;
-                GlobalStore.sendCustomSMS(student.id, student.parentPhone, message);
+                GlobalStore.sendCustomEmail(student.id, `${student.username}@college.edu`, message);
                 GlobalStore.updatePass(pass.id, { parentNotified: true });
+                alert("Parent Notified via Email");
             } else {
                 GlobalStore.updatePass(pass.id, { status: "used", scannedInAt: new Date().toISOString() });
                 alert("Student marked as Returned");
@@ -104,7 +109,7 @@ export default function AdvisorPortal() {
         }
     };
 
-    const handleLogout = () => { sessionStorage.removeItem("user"); router.push("/login"); };
+    const handleLogout = () => { sessionStorage.clear(); router.push("/login"); };
 
     if (!advisor) return null;
 
@@ -117,238 +122,262 @@ export default function AdvisorPortal() {
                 </button>
                 <div className="ml-6 flex items-center gap-3">
                     <h1 className="font-bold text-lg tracking-tight capitalize">
-                        {activeTab === 'pending' ? 'Advisor Approval' : 
+                        {activeTab === 'pending' ? 'Official Leave' : 
                          activeTab === 'history' ? 'Pass History' : 
-                         activeTab === 'late' ? 'Overdue List' : 'Profile'}
+                         activeTab === 'security' ? 'Security Alerts' : 'My Profile'}
                     </h1>
-                    {(notEntryPasses.length + duplicatePasses.length) > 0 && <span className="bg-red-500 text-white text-[10px] w-5 h-5 rounded-full flex items-center justify-center animate-pulse">{notEntryPasses.length + duplicatePasses.length}</span>}
                 </div>
             </header>
 
-            {/* Sidebar Drawer */}
-            <div
-                className={`fixed inset-0 bg-black/60 z-40 transition-opacity duration-300 ${isMenuOpen ? "opacity-100" : "opacity-0 pointer-events-none"}`}
-                onClick={() => setIsMenuOpen(false)}
-            />
-            <aside className={`fixed top-0 left-0 h-full w-[80%] bg-[#333333] z-50 shadow-2xl transition-transform duration-300 transform ${isMenuOpen ? "translate-x-0" : "-translate-x-full"}`}>
-                <div className="flex flex-col h-full text-white">
-                    <div className="bg-[#1e3a8a] p-10 text-center">
-                        <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center mx-auto mb-4 font-black text-[#1e3a8a] text-2xl overflow-hidden border-2 border-white/20">
-                            {advisor.profileImg ? (
-                                <img src={advisor.profileImg} className="w-full h-full object-cover rounded-full" alt="Profile" />
-                            ) : (
-                                <span>{advisor.name.charAt(0)}</span>
-                            )}
-                        </div>
-                        <p className="font-black uppercase tracking-widest">{advisor.name}</p>
-                        <p className="text-[10px] opacity-60 mt-1 font-bold">{advisor.assignedClass}</p>
-                    </div>
-                    <nav className="flex-1 p-4 space-y-2 mt-4">
+            {/* Sidebar */}
+            <aside className={`fixed top-0 left-0 h-full w-72 bg-white shadow-2xl z-[60] transition-transform duration-300 transform ${isMenuOpen ? "translate-x-0" : "-translate-x-full"}`}>
+                <div className="p-8 pt-24 space-y-2">
+                    {[
+                        { id: "pending", label: "Official Leave", icon: <Inbox size={20} /> },
+                        { id: "security", label: "Security Alerts", icon: <ShieldAlert size={20} /> },
+                        { id: "history", label: "Pass History", icon: <History size={20} /> },
+                        { id: "profile", label: "My Profile", icon: <User size={20} /> },
+                    ].map((item) => (
                         <button
-                            onClick={() => { setActiveTab("pending"); setIsMenuOpen(false); }}
-                            className={`w-full flex items-center gap-4 p-4 rounded-xl font-bold transition-colors ${activeTab === 'pending' ? 'bg-white/10' : 'hover:bg-white/5'}`}
+                            key={item.id}
+                            onClick={() => { setActiveTab(item.id as any); setIsMenuOpen(false); }}
+                            className={`w-full flex items-center gap-4 p-4 rounded-2xl transition-all duration-200 ${activeTab === item.id ? "bg-[#1e3a8a] text-white shadow-lg" : "text-gray-500 hover:bg-gray-50"}`}
                         >
-                            <Inbox size={20} /> Leave Inbox
+                            {item.icon}
+                            <span className="font-bold uppercase tracking-widest text-[10px]">{item.label}</span>
                         </button>
-                        <button
-                            onClick={() => { setActiveTab("late"); setIsMenuOpen(false); }}
-                            className={`w-full flex items-center gap-4 p-4 rounded-xl font-bold transition-colors ${activeTab === 'late' ? 'bg-red-500/20 text-red-200' : 'hover:bg-white/5 opacity-70'}`}
-                        >
-                            <ShieldAlert size={20} /> Overdue List {(notEntryPasses.length + duplicatePasses.length) > 0 && <span className="ml-auto bg-red-600 px-2 py-0.5 rounded text-[8px]">{notEntryPasses.length + duplicatePasses.length}</span>}
-                        </button>
-                        <button
-                            onClick={() => { setActiveTab("history"); setIsMenuOpen(false); }}
-                            className={`w-full flex items-center gap-4 p-4 rounded-xl font-bold transition-colors ${activeTab === 'history' ? 'bg-white/10' : 'hover:bg-white/5'}`}
-                        >
-                            <History size={20} /> Pass History
-                        </button>
-                        <button
-                            onClick={() => { setActiveTab("profile"); setIsMenuOpen(false); }}
-                            className={`w-full flex items-center gap-4 p-4 rounded-xl font-bold transition-colors ${activeTab === 'profile' ? 'bg-white/10' : 'hover:bg-white/5'}`}
-                        >
-                            <User size={20} /> My Profile
-                        </button>
-                        <hr className="border-white/10 my-6" />
-                        <button onClick={handleLogout} className="w-full flex items-center gap-4 p-4 rounded-xl font-bold text-red-100 hover:bg-red-500/10">
-                            <LogOut size={20} /> Logout
-                        </button>
-                    </nav>
+                    ))}
+                    <button onClick={handleLogout} className="w-full flex items-center gap-4 p-4 rounded-2xl text-red-500 hover:bg-red-50 mt-10">
+                        <LogOut size={20} />
+                        <span className="font-bold uppercase tracking-widest text-[10px]">Logout</span>
+                    </button>
                 </div>
             </aside>
 
-            <main className="pt-20 px-6 pb-20">
+            {/* Main Content */}
+            <main className="pt-24 pb-12 px-6 max-w-5xl mx-auto">
                 {activeTab === "pending" && (
-                    <div className="animate-in fade-in space-y-6">
-                        <div className="flex items-center gap-2 mb-4">
-                            <Clock className="text-[#1e3a8a]" size={20} />
-                            <h2 className="font-black text-gray-500 uppercase tracking-widest text-xs">Waiting Approval</h2>
+                    <div className="space-y-6">
+                        <div className="flex justify-between items-center">
+                            <h2 className="text-2xl font-black text-[#1e3a8a] uppercase tracking-tighter">Pending Approvals</h2>
+                            <span className="bg-blue-100 text-blue-700 font-bold px-4 py-1 rounded-full text-xs uppercase">{requests.length} Requests</span>
                         </div>
 
                         {requests.length === 0 ? (
-                            <div className="text-center py-24 bg-white rounded-3xl border border-gray-100 italic font-bold text-gray-300">No pending leave requests</div>
+                            <div className="bg-white rounded-[2rem] p-16 text-center shadow-sm border border-gray-100">
+                                <UserCheck className="mx-auto text-gray-200 mb-6" size={64} />
+                                <p className="text-gray-400 font-bold uppercase tracking-widest text-xs italic">All clear! No pending leave requests.</p>
+                            </div>
                         ) : (
-                            requests.map(pass => {
-                                const student = MOCK_STUDENTS().find(s => s.id === pass.studentId);
-                                return (
-                                    <div key={pass.id} className="bg-white rounded-2xl shadow-sm border p-6 space-y-4 animate-in slide-in-from-bottom-4">
-                                        <div className="flex items-center gap-4 border-b pb-4">
-                                            <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center font-black">{student?.name.charAt(0)}</div>
-                                            <div><p className="font-black text-[#1e3a8a]">{student?.name}</p><p className="text-[10px] text-gray-400 font-bold uppercase">{student?.rollNo}</p></div>
+                            <div className="grid gap-6">
+                                {requests.map((request) => {
+                                    const student = MOCK_STUDENTS().find(s => s.id === request.studentId);
+                                    return (
+                                        <div key={request.id} className="bg-white rounded-[2.5rem] p-8 shadow-sm border border-gray-100 hover:shadow-xl transition-all group">
+                                            <div className="flex flex-col md:flex-row justify-between gap-8">
+                                                <div className="flex items-start gap-6">
+                                                    <div className="w-16 h-16 rounded-3xl bg-blue-50 flex items-center justify-center font-black text-[#1e3a8a] text-2xl border-4 border-blue-100/50">
+                                                        {student?.name.charAt(0)}
+                                                    </div>
+                                                    <div>
+                                                        <h3 className="font-black text-xl text-gray-900 mb-1">{student?.name}</h3>
+                                                        <div className="flex flex-wrap gap-2 mb-4">
+                                                            <span className="bg-gray-100 text-gray-500 px-3 py-0.5 rounded-full text-[10px] font-bold uppercase">{student?.rollNo}</span>
+                                                            <span className="bg-blue-50 text-blue-600 px-3 py-0.5 rounded-full text-[10px] font-bold uppercase">{request.type}</span>
+                                                        </div>
+                                                        <div className="space-y-2 text-sm text-gray-500 font-medium bg-gray-50 p-6 rounded-3xl border border-gray-100 italic">
+                                                            <div className="flex items-center gap-3"><Calendar size={16} /> {request.date}</div>
+                                                            <div className="flex items-center gap-3"><Clock size={16} /> {request.startTime} - {request.endTime}</div>
+                                                            <p className="mt-4 pt-4 border-t border-gray-100 text-[#1e3a8a] leading-relaxed">" {request.reason} "</p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div className="flex md:flex-col gap-3">
+                                                    <button onClick={() => handleAction(request.id, "approved")} className="flex-1 px-8 py-4 bg-[#1e3a8a] text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-lg shadow-blue-100">Approve</button>
+                                                    <button onClick={() => handleAction(request.id, "rejected")} className="flex-1 px-8 py-4 bg-red-50 text-red-500 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-red-100 transition-all">Reject</button>
+                                                </div>
+                                            </div>
                                         </div>
-                                        <div className="grid grid-cols-2 gap-4 text-xs font-bold text-gray-500 uppercase">
-                                            <div className="flex items-center gap-2 font-bold"><Calendar size={14} /> {pass.date}</div>
-                                            <div className="flex items-center gap-2 font-bold"><Clock size={14} /> {pass.startTime}-{pass.endTime}</div>
-                                        </div>
-                                        <div className="flex gap-4">
-                                            <button onClick={() => handleAction(pass.id, "rejected")} className="flex-1 py-3 bg-red-50 text-red-600 rounded-xl font-black text-xs uppercase tracking-widest">Reject</button>
-                                            <button onClick={() => handleAction(pass.id, "approved")} className="flex-1 py-3 bg-[#1e3a8a] text-white rounded-xl font-black text-xs uppercase tracking-widest shadow-lg shadow-blue-100">Approve</button>
-                                        </div>
-                                    </div>
-                                );
-                            })
+                                    );
+                                })}
+                            </div>
                         )}
+                    </div>
+                )}
+
+                {activeTab === "security" && (
+                    <div className="space-y-12">
+                        {/* Not Returned List */}
+                        <section className="space-y-6">
+                            <div className="flex items-center gap-4 text-orange-600">
+                                <AlertTriangle size={32} />
+                                <h2 className="text-2xl font-black uppercase tracking-tighter">Overdue: Not Entered in Gate</h2>
+                            </div>
+                            
+                            <div className="bg-white rounded-[2rem] shadow-sm border border-gray-100 overflow-hidden">
+                                <table className="w-full text-left">
+                                    <thead className="bg-orange-50 text-orange-700 text-[10px] uppercase font-black tracking-widest">
+                                        <tr>
+                                            <th className="px-8 py-5 italic">Student Identity</th>
+                                            <th className="px-8 py-5 italic">Lunch Slot</th>
+                                            <th className="px-8 py-5 italic text-right">Escalation</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-100">
+                                        {notEntryPasses.length === 0 ? (
+                                            <tr><td colSpan={3} className="px-8 py-16 text-center text-gray-400 font-bold uppercase text-[10px] italic">No security alerts found. All students accounted for.</td></tr>
+                                        ) : (
+                                            notEntryPasses.map(p => {
+                                                const student = MOCK_STUDENTS().find(s => s.id === p.studentId);
+                                                return (
+                                                    <tr key={p.id} className="hover:bg-gray-50 transition-all font-bold">
+                                                        <td className="px-8 py-6">
+                                                            <p className="text-[#1e3a8a] uppercase text-xs font-black">{student?.name}</p>
+                                                            <p className="text-[10px] text-gray-400 mt-0.5">{student?.rollNo}</p>
+                                                        </td>
+                                                        <td className="px-8 py-6 text-xs text-gray-600 font-mono">
+                                                            OUT: {p.scannedOutAt ? new Date(p.scannedOutAt).toLocaleTimeString() : 'N/A'}<br/>
+                                                            DEADLINE: {p.endTime}
+                                                        </td>
+                                                        <td className="px-8 py-6 text-right">
+                                                            <button 
+                                                                onClick={() => handleParentEscalation(p, "not")}
+                                                                className={`px-6 py-2 rounded-full text-[9px] font-black uppercase tracking-widest transition-all ${p.parentNotified ? 'bg-gray-100 text-gray-400' : 'bg-red-600 text-white shadow-lg shadow-red-100 hover:scale-105'}`}
+                                                            >
+                                                                {p.parentNotified ? "Notified" : "Notify Parent (Email)"}
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </section>
+
+                        {/* Duplicate Entries */}
+                        <section className="space-y-6">
+                            <div className="flex items-center gap-4 text-purple-600">
+                                <ShieldAlert size={32} />
+                                <h2 className="text-2xl font-black uppercase tracking-tighter">Gate Check: Duplicate Entry Alert</h2>
+                            </div>
+                            
+                            <div className="bg-white rounded-[2rem] shadow-sm border border-gray-100 overflow-hidden">
+                                <table className="w-full text-left">
+                                    <thead className="bg-purple-50 text-purple-700 text-[10px] uppercase font-black tracking-widest">
+                                        <tr>
+                                            <th className="px-8 py-5 italic">Student Identity</th>
+                                            <th className="px-8 py-5 italic">Duplicate Passes</th>
+                                            <th className="px-8 py-5 italic text-right">Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-100">
+                                        {duplicatePasses.length === 0 ? (
+                                            <tr><td colSpan={3} className="px-8 py-16 text-center text-gray-400 font-bold uppercase text-[10px] italic">No duplicate entry requests detected.</td></tr>
+                                        ) : (
+                                            duplicatePasses.map(p => {
+                                                const student = MOCK_STUDENTS().find(s => s.id === p.studentId);
+                                                return (
+                                                    <tr key={p.id} className="hover:bg-gray-50 transition-all font-bold">
+                                                        <td className="px-8 py-6">
+                                                            <p className="text-[#1e3a8a] uppercase text-xs font-black">{student?.name}</p>
+                                                            <p className="text-[10px] text-gray-400 mt-0.5">{student?.rollNo}</p>
+                                                        </td>
+                                                        <td className="px-8 py-6 text-xs text-gray-600">
+                                                            Date: {p.date}<br/>
+                                                            Slot: {p.startTime}-{p.endTime}
+                                                        </td>
+                                                        <td className="px-8 py-6 text-right">
+                                                            <span className="bg-purple-100 text-purple-700 px-4 py-1.5 rounded-full text-[9px] font-black uppercase">{p.status}</span>
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </section>
                     </div>
                 )}
 
                 {activeTab === "history" && (
-                    <div className="animate-in fade-in space-y-6">
-                        <div className="flex items-center gap-2 mb-4">
-                            <History className="text-[#1e3a8a]" size={20} />
-                            <h2 className="font-black text-gray-500 uppercase tracking-widest text-xs">Full Pass History</h2>
+                    <div className="space-y-6">
+                        <div className="flex justify-between items-center">
+                            <h2 className="text-2xl font-black text-[#1e3a8a] uppercase tracking-tighter">Pass History</h2>
+                            <span className="bg-gray-100 text-gray-500 font-bold px-4 py-1 rounded-full text-xs uppercase">{historyRequests.length} Total</span>
                         </div>
-
-                        {historyRequests.length === 0 ? (
-                            <div className="text-center py-24 bg-white rounded-3xl border border-gray-100 italic font-bold text-gray-300">No pass history available</div>
-                        ) : (
-                            historyRequests.map(pass => {
-                                const student = MOCK_STUDENTS().find(s => s.id === pass.studentId);
-                                return (
-                                    <div key={pass.id} className="bg-white rounded-2xl shadow-sm border p-6 space-y-4 animate-in slide-in-from-bottom-4 relative overflow-hidden">
-                                        <div className={`absolute top-0 right-0 px-4 py-1 text-[8px] font-black uppercase tracking-widest ${pass.status === 'approved' ? 'bg-blue-100 text-blue-700' : pass.status === 'used' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                                            {pass.status}
-                                        </div>
-                                        <div className="flex items-center gap-4 border-b pb-4">
-                                            <div className="w-10 h-10 bg-gray-50 text-gray-600 rounded-lg flex items-center justify-center font-black">{student?.name.charAt(0)}</div>
-                                            <div><p className="font-black text-[#1e3a8a] text-sm">{student?.name}</p><p className="text-[10px] text-gray-400 font-bold uppercase">{student?.rollNo}</p></div>
-                                        </div>
-                                        <div className="grid grid-cols-2 gap-4 text-[10px] font-bold text-gray-500 uppercase">
-                                            <div className="flex items-center gap-2"><Calendar size={12} /> {pass.date}</div>
-                                            <div className="flex items-center gap-2"><Clock size={12} /> {pass.startTime}-{pass.endTime}</div>
-                                        </div>
-                                        {pass.reason && (
-                                            <div className="bg-gray-50 p-3 rounded-lg border-l-4 border-blue-200">
-                                                <p className="text-[9px] text-gray-400 italic">" {pass.reason} "</p>
-                                            </div>
-                                        )}
-                                    </div>
-                                );
-                            })
-                        )}
-                    </div>
-                )}
-
-                {activeTab === "late" && (
-                    <div className="animate-in fade-in space-y-8 py-8">
-                        {notEntryPasses.length === 0 && duplicatePasses.length === 0 ? (
-                            <div className="flex flex-col items-center justify-center py-24 bg-white rounded-3xl border border-gray-100 italic font-bold text-gray-300 uppercase text-[10px]">
-                                <Clock size={48} className="mb-4 opacity-20" />
-                                <p>No Audits or Alerts Found</p>
-                            </div>
-                        ) : (
-                            <div className="space-y-12">
-                                {notEntryPasses.length > 0 && (
-                                    <div className="space-y-4">
-                                        <div className="flex items-center gap-2 mb-2">
-                                            <ShieldAlert className="text-red-600" size={18} />
-                                            <h3 className="text-xs font-black text-red-600 uppercase tracking-[0.2em]">Overdue: Not Entered in Gate</h3>
-                                        </div>
-                                        {notEntryPasses.map(pass => {
-                                            const student = MOCK_STUDENTS().find(s => s.id === pass.studentId);
-                                            return (
-                                                <div key={pass.id} className="bg-white rounded-3xl shadow-xl border-l-[12px] border-red-500 p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 transition-all hover:scale-[1.01]">
-                                                    <div className="flex items-center gap-4">
-                                                        <div className="w-12 h-12 bg-red-50 text-red-600 rounded-2xl flex items-center justify-center font-black">{student?.name.charAt(0)}</div>
-                                                        <div>
-                                                            <p className="font-black text-gray-900 text-sm uppercase tracking-tighter">{student?.name}</p>
-                                                            <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest">Exited at {new Date(pass.scannedOutAt!).toLocaleTimeString()}</p>
-                                                        </div>
-                                                    </div>
-                                                    <div className="flex gap-2 w-full md:w-auto">
-                                                        <button 
-                                                            onClick={() => handleParentEscalation(pass, "enter")} 
-                                                            className="flex-1 md:flex-none px-6 py-3 bg-green-50 text-green-700 rounded-xl font-black text-[9px] uppercase border border-green-100"
-                                                        >
-                                                            Mark Entry
-                                                        </button>
-                                                        <button 
-                                                            onClick={() => handleParentEscalation(pass, "not")} 
-                                                            className="flex-1 md:flex-none px-6 py-3 bg-red-600 text-white rounded-xl font-black text-[9px] uppercase shadow-lg shadow-red-100"
-                                                        >
-                                                            Not Returned
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                )}
-
-                                {duplicatePasses.length > 0 && (
-                                    <div className="space-y-4">
-                                        <div className="flex items-center gap-2 mb-2">
-                                            <History className="text-orange-500" size={18} />
-                                            <h3 className="text-xs font-black text-orange-600 uppercase tracking-[0.2em]">Gate Check: Duplicate Entry Alert</h3>
-                                        </div>
-                                        {Array.from(new Set(duplicatePasses.map(p => p.studentId))).map(sid => {
-                                            const student = MOCK_STUDENTS().find(s => s.id === sid);
-                                            const studentDuplicates = duplicatePasses.filter(p => p.studentId === sid);
-                                            return (
-                                                <div key={sid} className="bg-white rounded-3xl shadow-xl border-l-[12px] border-orange-400 p-6 flex flex-col gap-5">
-                                                    <div className="flex items-center gap-4">
-                                                        <div className="w-12 h-12 bg-orange-50 text-orange-600 rounded-2xl flex items-center justify-center font-black">{student?.name.charAt(0)}</div>
-                                                        <div>
-                                                            <p className="font-black text-gray-900 text-sm uppercase tracking-tighter">{student?.name}</p>
-                                                            <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest">Multiple passes on {studentDuplicates[0]?.date}</p>
-                                                        </div>
-                                                    </div>
-                                                    <div className="bg-orange-50/40 rounded-2xl p-4 space-y-3 border border-orange-100/50">
-                                                        {studentDuplicates.map(p => (
-                                                            <div key={p.id} className="flex justify-between items-center text-[9px] font-black text-orange-900 uppercase">
-                                                                <span className="bg-white px-2 py-1 rounded border border-orange-100">{p.type} Pass ({p.startTime}-{p.endTime})</span>
-                                                                <span className="opacity-60">{p.status}</span>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                )}
-                            </div>
-                        )}
+                        
+                        <div className="bg-white rounded-[2.5rem] shadow-sm border border-gray-100 overflow-hidden">
+                            <table className="w-full text-left">
+                                <thead className="bg-gray-50 border-b border-gray-100">
+                                    <tr className="text-[10px] uppercase font-black tracking-widest text-gray-400 italic">
+                                        <th className="px-8 py-6">Student</th>
+                                        <th className="px-8 py-6">Type / Date</th>
+                                        <th className="px-8 py-6">Timeline</th>
+                                        <th className="px-8 py-6 text-right">Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-100">
+                                    {historyRequests.map((p) => {
+                                        const student = MOCK_STUDENTS().find(s => s.id === p.studentId);
+                                        return (
+                                            <tr key={p.id} className="hover:bg-gray-50 transition-all font-bold">
+                                                <td className="px-8 py-6">
+                                                    <p className="text-[#1e3a8a] text-xs uppercase font-black">{student?.name}</p>
+                                                    <p className="text-[10px] text-gray-400 mt-0.5">{student?.rollNo}</p>
+                                                </td>
+                                                <td className="px-8 py-6">
+                                                    <p className="text-xs text-gray-900 uppercase">{p.type}</p>
+                                                    <p className="text-[10px] text-gray-400 mt-0.5 italic">{p.date}</p>
+                                                </td>
+                                                <td className="px-8 py-6 text-xs text-gray-500 font-mono">
+                                                    {p.startTime} - {p.endTime}
+                                                </td>
+                                                <td className="px-8 py-6 text-right">
+                                                    <span className={`px-4 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest border ${
+                                                        p.status === 'approved' ? 'bg-green-50 text-green-600 border-green-100' :
+                                                        p.status === 'rejected' ? 'bg-red-50 text-red-600 border-red-100' :
+                                                        'bg-gray-50 text-gray-500 border-gray-200'
+                                                    }`}>
+                                                        {p.status}
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 )}
 
                 {activeTab === "profile" && (
-                    <div className="animate-in fade-in space-y-8 py-8">
-                        <div className="bg-white rounded-[2rem] shadow-sm overflow-hidden border">
-                            <div className="bg-[#1e3a8a] h-24 relative flex justify-center items-end pb-8">
-                                <div className="absolute -bottom-8 w-24 h-24 bg-white rounded-full border-4 border-white shadow-xl overflow-hidden flex items-center justify-center text-[#1e3a8a] font-black text-3xl">
-                                    {(advisor as Advisor).profileImg ? (
-                                        <img src={(advisor as Advisor).profileImg} className="w-full h-full object-cover rounded-full" alt="Profile" />
-                                    ) : (
-                                        <span>{(advisor as Advisor).name.charAt(0)}</span>
-                                    )}
+                    <div className="bg-white rounded-[3rem] p-12 md:p-16 shadow-xl border border-gray-100 relative overflow-hidden">
+                        <div className="absolute top-0 right-0 w-64 h-64 bg-blue-50 rounded-full -mr-32 -mt-32 -z-10" />
+                        <div className="flex flex-col md:flex-row items-center gap-12">
+                            <div className="w-40 h-40 rounded-[2.5rem] bg-[#1e3a8a] flex items-center justify-center font-black text-white text-6xl shadow-2xl shadow-blue-200 border-8 border-white">
+                                {advisor.name.charAt(0)}
+                            </div>
+                            <div className="text-center md:text-left">
+                                <h2 className="text-4xl font-black text-gray-900 uppercase tracking-tighter mb-4">{advisor.name}</h2>
+                                <div className="grid gap-3">
+                                    <div className="flex items-center gap-4 text-gray-500 font-bold uppercase tracking-widest text-xs ring-1 ring-gray-100 bg-gray-50 px-6 py-2 rounded-full">
+                                        <ShieldAlert size={16} className="text-[#1e3a8a]" />
+                                        Department: {advisor.department}
+                                    </div>
+                                    <div className="flex items-center gap-4 text-gray-500 font-bold uppercase tracking-widest text-xs ring-1 ring-gray-100 bg-gray-50 px-6 py-2 rounded-full">
+                                        <Clock size={16} className="text-[#1e3a8a]" />
+                                        Class: {advisor.assignedClass}
+                                    </div>
+                                    <div className="flex items-center gap-4 text-gray-500 font-bold uppercase tracking-widest text-xs ring-1 ring-gray-100 bg-gray-50 px-6 py-2 rounded-full">
+                                        <Clock size={16} className="text-[#1e3a8a]" />
+                                        Contact: {advisor.phone}
+                                    </div>
                                 </div>
                             </div>
-                            <div className="p-8 pt-12 space-y-8">
-                                <div className="text-center border-b pb-8"><p className="text-xs font-black text-gray-400 uppercase tracking-widest mb-1">Advisor Name</p><p className="text-xl font-black text-[#1e3a8a]">{(advisor as Advisor).name}</p></div>
-                                <div className="text-center border-b pb-8"><p className="text-xs font-black text-gray-400 uppercase tracking-widest mb-1">Assigned Jurisdiction</p><p className="text-xl font-black text-green-600 uppercase italic">{(advisor as Advisor).assignedClass} Class</p></div>
-                                <div className="text-center border-b pb-8"><p className="text-xs font-black text-gray-400 uppercase tracking-widest mb-1">Primary Mobile</p><p className="text-xl font-black text-blue-600 italic tracking-widest">{(advisor as Advisor).phone}</p></div>
-                                <div className="text-center"><p className="text-xs font-black text-gray-400 uppercase tracking-widest mb-1">Primary Dept</p><p className="text-xl font-black text-gray-900">{(advisor as Advisor).department}</p></div>
-                            </div>
                         </div>
-                        <button onClick={handleLogout} className="w-full py-4 bg-[#1e3a8a] text-white rounded-xl font-black uppercase tracking-widest">System Logout</button>
                     </div>
                 )}
             </main>

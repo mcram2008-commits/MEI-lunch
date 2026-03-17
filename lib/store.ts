@@ -57,7 +57,6 @@ class PassStore {
         { id: "admin1", username: "admin", password: "123", role: "admin", name: "System Admin" },
         { id: "watchman1", username: "watchman1", password: "123", role: "watchman", name: "Watchman 1 (Entry Control)" },
         { id: "watchman2", username: "watchman2", password: "123", role: "watchman", name: "Watchman 2 (Exit Control)" },
-        { id: "demo_student", username: "student", password: "123", role: "student", name: "Test Student", rollNo: "MAH001", department: "B.Tech IT", year: "3", section: "A", parentPhone: "9876543210", studentPhone: "8877665544" } as Student
     ];
     private passes: Pass[] = [];
     private listeners: (() => void)[] = [];
@@ -125,7 +124,7 @@ class PassStore {
             if (diffMins >= 1 && !pass.studentNotified) {
                 const student = this.users.find(u => u.id === pass.studentId) as Student;
                 if (student) {
-                    this.simulateSMS(student.id, `LUNCH PASS EXPIRED! You were supposed to return by ${pass.endTime}. Return to hostel immediately.`, student.studentPhone);
+                    this.simulateEmail(student.id, `LUNCH PASS EXPIRED! You were supposed to return by ${pass.endTime}. Return to hostel immediately.`);
                     updatedPass.studentNotified = true;
                     changed = true;
                 }
@@ -139,7 +138,7 @@ class PassStore {
                 const advisor = advisors.find(a => a.assignedClass.toUpperCase() === studentClass);
 
                 if (advisor && student) {
-                    this.simulateSMS(advisor.id, `ALERT: Student ${student.name} (${student.rollNo}) has not returned from Lunch (End: ${pass.endTime}). Action required.`, advisor.phone);
+                    this.simulateEmail(advisor.id, `ALERT: Student ${student.name} (${student.rollNo}) has not returned from Lunch (End: ${pass.endTime}). Action required.`);
                     updatedPass.advisorNotified = true;
                     changed = true;
                 }
@@ -170,12 +169,10 @@ class PassStore {
         this.notify();
         
         // Notify user about registration
-        let phone = "";
-        if (user.role === "student") phone = (user as Student).studentPhone;
-        else if (user.role === "advisor") phone = (user as Advisor).phone;
+        let identification = user.username;
         
-        if (phone) {
-            this.simulateSMS(user.id, `Welcome to MEI Hostel Portal. Account active!`, phone);
+        if (identification) {
+            this.simulateEmail(user.id, `Welcome to MEI Hostel Portal. Account active!`);
         }
     }
 
@@ -199,7 +196,7 @@ class PassStore {
         const student = this.users.find(u => u.id === pass.studentId) as Student;
         // Only lunch pass messages as per request (aside from application confirmation maybe)
         if (student && pass.type === 'lunch') {
-            this.simulateSMS(pass.studentId, `Lunch Pass applied for ${pass.date} (${pass.startTime}-${pass.endTime})`, student.parentPhone);
+            this.simulateEmail(pass.studentId, `Lunch Pass applied for ${pass.date} (${pass.startTime}-${pass.endTime})`);
         }
     }
 
@@ -212,31 +209,30 @@ class PassStore {
         if (pass && updates.status === "approved" && pass.type === 'lunch') {
             const student = this.users.find(u => u.id === pass.studentId) as Student;
             if (student) {
-                this.simulateSMS(pass.studentId, `Lunch Pass APPROVED for ${pass.date}. Ready for exit.`, student.studentPhone);
+                this.simulateEmail(pass.studentId, `Lunch Pass APPROVED for ${pass.date}. Ready for exit.`);
             }
         }
     }
 
-    public sendCustomSMS(userId: string, targetPhone: string, message: string) {
-        this.simulateSMS(userId, message, targetPhone);
+    public sendCustomEmail(userId: string, targetEmail: string, message: string) {
+        this.simulateEmail(userId, message, targetEmail);
     }
 
-    private simulateSMS(userId: string, message: string, overridePhone?: string) {
+    private simulateEmail(userId: string, message: string, overrideEmail?: string) {
         const user = this.users.find(u => u.id === userId);
-        if (user || overridePhone) {
-            let phone = overridePhone;
-            if (!phone && user) {
-                if (user.role === "student") phone = (user as Student).studentPhone;
-                else if (user.role === "advisor") phone = (user as Advisor).phone;
+        if (user || overrideEmail) {
+            let email = overrideEmail;
+            if (!email && user) {
+                email = `${user.username}@college.edu`;
             }
             
-            if (!phone) return;
+            if (!email) return;
 
             if (typeof window !== "undefined") {
                 const toast = document.createElement("div");
-                toast.className = "fixed bottom-6 right-6 w-[340px] bg-gray-900 text-white rounded-2xl shadow-2xl z-[9999] animate-in slide-in-from-bottom-12 p-6 border border-white/10";
+                toast.className = "fixed bottom-6 right-6 w-[340px] bg-blue-900 text-white rounded-2xl shadow-2xl z-[9999] animate-in slide-in-from-bottom-12 p-6 border border-white/20";
                 toast.innerHTML = `
-                    <p class="text-[10px] font-black opacity-50 uppercase tracking-widest mb-1">System Notification</p>
+                    <p class="text-[10px] font-black opacity-50 uppercase tracking-widest mb-1">Email Sent To: ${email}</p>
                     <p class="text-xs font-bold leading-relaxed italic">"${message}"</p>
                 `;
                 document.body.appendChild(toast);

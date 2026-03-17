@@ -1,19 +1,22 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { GlobalStore, MOCK_STUDENTS, Pass, User } from "@/lib/store";
+import { useState, useEffect, useCallback } from "react";
+import { GlobalStore, Pass, User, Student } from "@/lib/store";
 import { Html5QrcodeScanner } from "html5-qrcode";
 import {
-    Menu, X, ShieldCheck, LogOut, ArrowLeft,
-    Clock, Calendar, User as UserIcon, AlertCircle, Scan, CheckCircle2, FileText
+    ShieldCheck, QrCode, ScanLines, LogOut, CheckCircle, XCircle,
+    User as UserIcon, Clock, ChevronRight, Menu, X, ShieldAlert,
+    Camera, History, CheckCircle2
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
-export default function SimpleWatchman() {
-    const [watchman, setWatchman] = useState<User | null>(null);
-    const [activeScreen, setActiveScreen] = useState<"scan" | "details" | "error">("scan");
-    const [currentPassId, setCurrentPassId] = useState<string | null>(null);
-    const [errorMessage, setErrorMessage] = useState("");
+export default function WatchmanPortal() {
+    const [scanResult, setScanResult] = useState<any>(null);
+    const [studentInfo, setStudentInfo] = useState<Student | null>(null);
+    const [passInfo, setPassInfo] = useState<Pass | null>(null);
+    const [isMenuOpen, setIsMenuOpen] = useState(false);
+    const [logs, setLogs] = useState<Pass[]>([]);
+    
     const router = useRouter();
 
     useEffect(() => {
@@ -21,212 +24,193 @@ export default function SimpleWatchman() {
         if (!savedUser) { router.push("/login"); return; }
         const user = JSON.parse(savedUser) as User;
         if (user.role !== "watchman") { router.push("/login"); return; }
-        setWatchman(user);
+
+        const scanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 280 }, false);
+        scanner.render(onScanSuccess, (e) => {});
+
+        const update = () => {
+            const allPasses = GlobalStore.getPasses();
+            setLogs(allPasses.filter(p => p.scannedInAt || p.scannedOutAt)
+                         .sort((a, b) => new Date(b.scannedInAt || b.scannedOutAt || 0).getTime() - new Date(a.scannedInAt || a.scannedOutAt || 0).getTime()));
+        };
+        update();
+        const unsub = GlobalStore.subscribe(update);
+
+        return () => { scanner.clear(); unsub(); };
     }, [router]);
 
-    // Force re-render when store changes to keep data fresh
-    const [tick, setTick] = useState(0);
-    useEffect(() => {
-        return GlobalStore.subscribe(() => setTick(t => t + 1));
+    const onScanSuccess = useCallback((result: string) => {
+        try {
+            const data = JSON.parse(result);
+            if (!data.id) throw new Error("Invalid Pass");
+            
+            const pass = GlobalStore.getPasses().find(p => p.id === data.id);
+            if (!pass) { alert("🚨 Pass Record Not Found in Database"); return; }
+            
+            const student = GlobalStore.getUsers().find(u => u.id === pass.studentId) as Student;
+            setScanResult(data);
+            setPassInfo(pass);
+            setStudentInfo(student);
+        } catch (e) {
+            alert("⚠️ Unrecognized QR Signature. Authorization Refused.");
+        }
     }, []);
 
-    useEffect(() => {
-        if (!watchman || activeScreen !== "scan") return;
+    const handleAction = (type: "in" | "out") => {
+        if (!passInfo) return;
 
-        const { Html5Qrcode } = require("html5-qrcode");
-        const html5QrCode = new Html5Qrcode("reader");
+        if (type === "out") {
+            GlobalStore.updatePass(passInfo.id, {
+                scannedOutAt: new Date().toISOString(),
+                status: "approved" // Keep as approved so the student can still see the pass for selfie verification
+            });
+        } else {
+            GlobalStore.updatePass(passInfo.id, {
+                scannedInAt: new Date().toISOString(),
+                // For lunch passes, we don't mark 'used' until face verification done in student portal
+                // But for leave, maybe we do. Request says selfie check is return, so we stay approved here.
+                status: "approved" 
+            });
+        }
         
-        const startScanner = async () => {
-            try {
-                // Check if element exists before starting
-                const element = document.getElementById("reader");
-                if (!element) return;
-
-                await html5QrCode.start(
-                    { facingMode: "environment" },
-                    { fps: 15, qrbox: { width: 300, height: 300 } },
-                    (decodedText: string) => {
-                        console.log("Decoded QR:", decodedText);
-                        let passId = decodedText.trim();
-                        try {
-                            const data = JSON.parse(decodedText);
-                            if (data.id) passId = data.id;
-                        } catch (e) {
-                            console.warn("QR is not JSON format, using literal text");
-                        }
-
-                        console.log("Looking for passId:", passId);
-                        const passes = GlobalStore.getPasses();
-                        const pass = passes.find(p => p.id === passId);
-                        
-                        if (pass) {
-                            console.log("Pass found:", pass);
-                            setCurrentPassId(pass.id);
-                            setActiveScreen("details");
-                            html5QrCode.stop().catch(() => {});
-                        } else {
-                            console.error("Pass not found for ID:", passId);
-                            setErrorMessage(`Pass ID ${passId} not found in system.`);
-                            setActiveScreen("error");
-                            html5QrCode.stop().catch(() => {});
-                        }
-                    },
-                    (err: any) => {}
-                );
-            } catch (err: any) {
-                console.error("Scanner error:", err);
-            }
-        };
-
-        const timeoutId = setTimeout(startScanner, 300);
-
-        return () => {
-            clearTimeout(timeoutId);
-            if (html5QrCode.isScanning) {
-                html5QrCode.stop().catch((err: any) => console.error("Cleanup stop error:", err));
-            }
-        };
-    }, [watchman, activeScreen]);
-
-    // Compute data from store based on passId
-    const currentPass = GlobalStore.getPasses().find(p => p.id === currentPassId);
-    const studentForPass = MOCK_STUDENTS().find(s => s.id === currentPass?.studentId);
-
-    const handleAction = (type: 'exit' | 'entry') => {
-        if (!currentPass) return;
-        GlobalStore.updatePass(currentPass.id, {
-            scannedOutAt: type === 'exit' ? new Date().toISOString() : currentPass.scannedOutAt,
-            scannedInAt: type === 'entry' ? new Date().toISOString() : currentPass.scannedInAt,
-            status: "approved", // Keep approved so student can still see it for selfie
-        });
-        setActiveScreen("scan");
-        setCurrentPassId(null);
+        alert(`SUCCESS: Gate ${type.toUpperCase()} recorded.`);
+        setScanResult(null);
+        setPassInfo(null);
+        setStudentInfo(null);
     };
 
-    const logout = () => { sessionStorage.removeItem("user"); router.push("/login"); };
-
-    if (!watchman) return null;
+    const handleLogout = () => { sessionStorage.clear(); router.push("/login"); };
 
     return (
         <div className="min-h-screen bg-[#f3f4f9] pb-10">
-            <header className="fixed top-0 bg-[#1e3a8a] text-white w-full h-16 flex items-center px-6 z-50 shadow-md">
-                <ShieldCheck size={24} />
-                <h1 className="ml-4 font-bold text-lg tracking-tight uppercase">Gate Check</h1>
-                <button onClick={logout} className="ml-auto p-2 opacity-70 hover:opacity-100 transition-opacity"><LogOut size={20} /></button>
+            {/* Nav Header */}
+            <header className="fixed top-0 bg-white shadow-xl shadow-blue-100/30 w-full h-20 flex items-center justify-between px-8 z-50">
+                <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-[#1e3a8a] text-white rounded-2xl flex items-center justify-center font-black text-2xl shadow-lg shadow-blue-200">W</div>
+                    <div>
+                        <h1 className="font-bold text-lg text-gray-900 leading-tight">GATE SECURITY</h1>
+                        <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest mt-0.5 border-t border-gray-100 pt-1">Entry/Exit Control</p>
+                    </div>
+                </div>
+                <button onClick={handleLogout} className="p-3 bg-red-50 text-red-500 rounded-xl hover:bg-red-500 hover:text-white transition-all scale-100 active:scale-95 shadow-sm">
+                    <LogOut size={20} />
+                </button>
             </header>
 
-            <main className="pt-24 px-6 max-w-lg mx-auto">
-                {activeScreen === "scan" && (
-                    <div className="animate-in fade-in py-10 space-y-12 text-center">
-                        <div>
-                            <h2 className="text-3xl font-black text-[#1e3a8a] mb-2 tracking-tight">Scanner Ready</h2>
-                            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest leading-6">Scanning authorized digital tokens</p>
-                        </div>
-
-                        <div className="w-full aspect-square bg-[#333] rounded-[3rem] overflow-hidden border-[12px] border-white shadow-2xl relative shadow-blue-100/50">
-                            <div id="reader" className="w-full h-full scale-[1.05]"></div>
-                            <div className="absolute inset-x-0 top-1/2 h-[2px] bg-orange-500/40 animate-bounce pointer-events-none" />
-                        </div>
-
-                        <div className="bg-white p-6 rounded-2xl flex items-center gap-4 border shadow-sm mx-auto w-fit">
-                            <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
-                            <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Active System Connection</p>
-                        </div>
-                    </div>
-                )}
-
-                {activeScreen === "error" && (
-                    <div className="animate-in zoom-in text-center py-24 bg-white rounded-[3rem] p-10 shadow-xl border border-red-50">
-                        <AlertCircle size={80} className="text-red-500 mx-auto mb-10" />
-                        <h2 className="text-3xl font-black text-gray-900 mb-6 uppercase tracking-widest">Invalid QR</h2>
-                        <div className="p-6 bg-red-50 text-red-600 font-bold mb-12 rounded-2xl italic">
-                            {errorMessage}
-                        </div>
-                        <button onClick={() => setActiveScreen("scan")} className="w-full h-18 py-6 bg-red-600 text-white rounded-3xl font-black text-lg tracking-widest shadow-xl shadow-red-100">BACK TO SCANNER</button>
-                    </div>
-                )}
-
-                {activeScreen === "details" && !currentPass && (
-                    <div className="animate-in zoom-in text-center py-20 bg-white rounded-3xl p-8 border border-orange-100 shadow-xl">
-                        <AlertCircle size={60} className="text-orange-500 mx-auto mb-6" />
-                        <h2 className="text-xl font-black text-gray-900 mb-4 uppercase tracking-widest">Data Mismatch</h2>
-                        <p className="text-sm font-bold text-gray-500 mb-8 italic">The pass exists in memory but student details are missing. Please refresh or check Admin records.</p>
-                        <button onClick={() => setActiveScreen("scan")} className="w-full py-4 bg-orange-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest">Back to Scanner</button>
-                    </div>
-                )}
-
-                {activeScreen === "details" && currentPass && (
-                    <div className="animate-in slide-in-from-bottom-8 duration-500">
-                        <div className="bg-white rounded-[3rem] p-10 space-y-10 shadow-2xl overflow-hidden relative border border-gray-50">
-                            <div className={`absolute top-0 inset-x-0 h-3 ${currentPass.status === 'approved' ? 'bg-[#1e3a8a]' : 'bg-gray-300'}`} />
-
-                            <div className="flex flex-col items-center gap-6 border-b pb-10 relative">
-                                <div className={`absolute -top-14 right-0 px-4 py-2 rounded-xl font-black text-[10px] uppercase tracking-[0.2em] shadow-lg ${currentPass.type === 'leave' ? 'bg-purple-600 text-white' : 'bg-orange-600 text-white'}`}>
-                                    {currentPass.type} Pass
-                                </div>
-                                <div className="w-32 h-32 bg-[#1e3a8a] text-white rounded-[2rem] flex items-center justify-center font-black text-5xl shadow-2xl overflow-hidden border-4 border-white">
-                                    {studentForPass?.profileImg ? (
-                                        <img src={studentForPass.profileImg} className="w-full h-full object-cover" alt="Profile" />
-                                    ) : (
-                                        <span>{studentForPass?.name?.[0] || "?"}</span>
-                                    )}
-                                </div>
-                                <div className="text-center">
-                                    <h3 className="text-3xl font-black text-gray-900 mb-1 leading-tight">{studentForPass?.name || "Student Name Missing"}</h3>
-                                    <p className="text-[12px] font-bold text-gray-400 uppercase tracking-widest">
-                                        {studentForPass ? `${studentForPass.rollNo} | ${studentForPass.department}` : "System ID: " + currentPass.studentId}
-                                    </p>
-                                </div>
+            <main className="max-w-6xl mx-auto pt-32 px-6">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
+                    {/* Scanner Section */}
+                    <section className="space-y-8">
+                        <div className="bg-white rounded-[3rem] p-10 shadow-2xl border-4 border-white relative overflow-hidden group">
+                            <div className="absolute top-0 right-0 bg-[#1e3a8a] text-white px-8 py-3 rounded-bl-3xl font-black text-[10px] uppercase tracking-widest flex items-center gap-2">
+                                <ScanLines size={14} className="animate-pulse" /> LIVE SCANNER
                             </div>
+                            
+                            <h2 className="text-2xl font-black text-[#1e3a8a] uppercase tracking-tighter mb-8 italic">Authentication Node</h2>
+                            
+                            <div id="reader" className="w-full h-[400px] bg-gray-50 rounded-[2.5rem] overflow-hidden border-2 border-dashed border-gray-200 group-hover:border-blue-200 transition-all"></div>
+                            
+                            <div className="mt-8 flex items-center gap-4 bg-blue-50/50 p-6 rounded-3xl border border-blue-100/30">
+                                <div className="p-3 bg-blue-100 text-[#1e3a8a] rounded-xl"><ShieldCheck size={24} /></div>
+                                <p className="text-[11px] font-bold text-gray-500 uppercase tracking-wide leading-relaxed">
+                                    Aligned encrypted QR code within the focus area to authorize entry or exit operations.
+                                </p>
+                            </div>
+                        </div>
 
-                            <div className="space-y-6">
-                                {currentPass.type === 'leave' || currentPass.reason ? (
-                                    <div className="bg-gray-50 p-6 rounded-3xl border-b-2 border-purple-500">
-                                        <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mb-1 flex items-center gap-2"><FileText size={12} /> Reason for Leave</p>
-                                        <p className="text-sm font-bold text-gray-900 leading-relaxed italic">"{currentPass.reason || 'Personal Work'}"</p>
-                                    </div>
-                                ) : (
-                                    <div className="bg-gray-50 p-6 rounded-3xl flex items-center justify-between border-b-2 border-orange-500">
-                                        <div>
-                                            <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mb-1 flex items-center gap-2"><Clock size={12} /> Window</p>
-                                            <p className="text-lg font-black text-gray-900 tracking-wider font-mono">{currentPass.startTime} - {currentPass.endTime}</p>
+                        {/* Recent Activity Mini-Feed */}
+                        <div className="bg-white/40 backdrop-blur-md rounded-[3rem] p-8 border border-white/50">
+                             <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-6 flex items-center gap-2"><History size={14} /> Local Session Feed</h3>
+                             <div className="space-y-3">
+                                {logs.slice(0, 3).map(l => (
+                                    <div key={l.id} className="bg-white p-4 rounded-2xl flex items-center justify-between shadow-sm border border-gray-100 animate-in fade-in slide-in-from-right-4">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center"><CheckCircle2 size={16} className="text-blue-600" /></div>
+                                            <span className="text-[10px] font-black text-gray-900 uppercase tracking-tight">{GlobalStore.getUsers().find(u => u.id === l.studentId)?.name}</span>
                                         </div>
-                                        <CheckCircle2 size={32} className="text-green-500" />
+                                        <span className="text-[8px] font-bold text-gray-400 bg-gray-50 px-3 py-1 rounded-full">{new Date(l.scannedInAt || l.scannedOutAt || "").toLocaleTimeString()}</span>
                                     </div>
-                                )}
-                                <div className="bg-gray-50 p-6 rounded-3xl flex items-center gap-6 border border-gray-100">
-                                    <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center text-blue-500"><UserIcon size={24} /></div>
-                                    <div>
-                                        <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mb-1">Student Unit</p>
-                                        <p className="text-sm font-black text-gray-900 leading-tight">
-                                            {studentForPass?.department} - {studentForPass?.year} Year
-                                        </p>
-                                        <p className="text-[10px] font-bold text-gray-400 mt-1">Section: {studentForPass?.section}</p>
+                                ))}
+                             </div>
+                        </div>
+                    </section>
+
+                    {/* Verification Result Section */}
+                    <section>
+                        {scanResult ? (
+                            <div className="bg-white rounded-[3rem] shadow-2xl relative overflow-hidden animate-in zoom-in-95 duration-500 h-full flex flex-col">
+                                <div className={`h-4 ${passInfo?.status === 'approved' ? 'bg-green-500' : 'bg-red-500'}`} />
+                                <div className="p-10 md:p-12 flex-1 flex flex-col">
+                                    <div className="flex justify-between items-start mb-10">
+                                        <div>
+                                            <p className="text-[10px] font-black text-blue-600 uppercase tracking-[0.3em] mb-2 italic">Verification Passed</p>
+                                            <h3 className="text-4xl font-black text-gray-900 uppercase tracking-tighter leading-none">{studentInfo?.name}</h3>
+                                            <p className="text-xs font-bold text-gray-400 mt-2">{studentInfo?.rollNo} | {studentInfo?.department}</p>
+                                        </div>
+                                        {studentInfo?.profileImg ? (
+                                            <img src={studentInfo.profileImg} className="w-24 h-24 rounded-3xl object-cover border-4 border-gray-50 shadow-xl" alt="P" />
+                                        ) : (
+                                            <div className="w-20 h-20 bg-gray-50 rounded-3xl flex items-center justify-center text-gray-300"><UserIcon size={40} /></div>
+                                        )}
                                     </div>
+
+                                    <div className="bg-gray-50/80 rounded-[2.5rem] p-8 space-y-6 mb-10 border border-gray-100">
+                                        <div className="flex justify-between text-xs font-black uppercase tracking-widest text-[#1e3a8a]">
+                                            <span>Pass Identity</span>
+                                            <span>#{passInfo?.id.slice(-6)}</span>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div className="bg-white p-6 rounded-3xl text-center shadow-sm border border-gray-100">
+                                                <p className="text-[9px] font-black text-gray-400 uppercase mb-2">Operation Type</p>
+                                                <p className={`font-black uppercase text-xs ${passInfo?.type === 'lunch' ? 'text-blue-600' : 'text-purple-600'}`}>{passInfo?.type} Pass</p>
+                                            </div>
+                                            <div className="bg-white p-6 rounded-3xl text-center shadow-sm border border-gray-100">
+                                                <p className="text-[9px] font-black text-gray-400 uppercase mb-2">Status Node</p>
+                                                <p className="font-black uppercase text-green-600 text-xs">{passInfo?.status}</p>
+                                            </div>
+                                        </div>
+                                        <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 flex items-center justify-between">
+                                            <div>
+                                                <p className="text-[9px] font-black text-gray-400 uppercase mb-1">Time Slot Range</p>
+                                                <p className="font-black text-gray-900 text-sm">{passInfo?.startTime} - {passInfo?.endTime}</p>
+                                            </div>
+                                            <Clock size={24} className="text-gray-200" />
+                                        </div>
+                                    </div>
+
+                                    <div className="mt-auto grid grid-cols-2 gap-6">
+                                        <button 
+                                            onClick={() => handleAction("out")}
+                                            className="group relative flex flex-col items-center gap-3 p-8 bg-[#1e3a8a] text-white rounded-[2rem] font-black uppercase text-[10px] tracking-widest shadow-2xl shadow-blue-100 hover:scale-[1.02] active:scale-95 transition-all overflow-hidden"
+                                        >
+                                            <div className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                            <LogOut size={24} className="rotate-180" /> SCAN OUT (EXIT)
+                                        </button>
+                                        <button 
+                                            onClick={() => handleAction("in")}
+                                            className="group relative flex flex-col items-center gap-3 p-8 bg-green-600 text-white rounded-[2rem] font-black uppercase text-[10px] tracking-widest shadow-2xl shadow-green-100 hover:scale-[1.02] active:scale-95 transition-all overflow-hidden"
+                                        >
+                                            <div className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                            <ShieldCheck size={24} /> SCAN IN (ENTRY)
+                                        </button>
+                                    </div>
+                                    
+                                    <button onClick={() => setScanResult(null)} className="mt-6 text-[10px] font-black text-gray-300 uppercase tracking-[0.2em] hover:text-gray-900 transition-colors">Discard & Resume Scan</button>
                                 </div>
                             </div>
-
-                            <div className="space-y-4 pt-6">
-                                {watchman.id === "watchman2" ? (
-                                    <button 
-                                        onClick={() => handleAction('exit')} 
-                                        className="w-full h-20 bg-orange-600 text-white rounded-[2rem] font-black text-xl shadow-xl shadow-orange-100 active:scale-[0.98] transition-all uppercase tracking-widest"
-                                    >
-                                        LOG EXIT (Gate 2)
-                                    </button>
-                                ) : (
-                                    <button 
-                                        onClick={() => handleAction('entry')} 
-                                        className="w-full h-20 bg-[#1e3a8a] text-white rounded-[2rem] font-black text-xl shadow-xl shadow-blue-100 active:scale-[0.98] transition-all uppercase tracking-widest"
-                                    >
-                                        LOG ENTRY (Gate 1)
-                                    </button>
-                                )}
-                                <button onClick={() => { setActiveScreen("scan"); setCurrentPassId(null); }} className="w-full py-4 text-gray-400 font-black text-xs uppercase tracking-widest hover:text-[#1e3a8a]">Back to Scanner</button>
+                        ) : (
+                            <div className="h-full bg-white/50 backdrop-blur-md rounded-[4rem] border-4 border-dashed border-white flex flex-col items-center justify-center p-16 text-center animate-in fade-in zoom-in-95 duration-700">
+                                <div className="w-32 h-32 bg-white rounded-full flex items-center justify-center mb-8 shadow-inner border shadow-gray-200/50">
+                                    <QrCode size={48} className="text-gray-200 animate-pulse" />
+                                </div>
+                                <h3 className="text-xl font-black text-gray-400 uppercase tracking-tighter mb-4">Awaiting Signal</h3>
+                                <p className="text-sm font-bold text-gray-300 leading-relaxed uppercase italic tracking-widest max-w-xs">
+                                    Digital handshake initialized.<br/>Scan QR code to verify identity.
+                                </p>
                             </div>
-                        </div>
-                    </div>
-                )}
+                        )}
+                    </section>
+                </div>
             </main>
         </div>
     );

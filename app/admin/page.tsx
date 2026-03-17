@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { GlobalStore, Pass, Student, Advisor, User } from "@/lib/store";
 import {
     ShieldCheck, UserPlus, FileText, Trash2, LogOut, Plus, Search, Filter, ArrowLeft, ArrowRight,
-    TrendingUp, Users, ShieldAlert, CheckCircle2, X, Menu, Activity
+    TrendingUp, Users, ShieldAlert, CheckCircle2, X, Menu, Activity, Pencil, Edit
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -57,20 +57,25 @@ export default function SimpleAdmin() {
     const handleFormSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         
-        // Final Validation
+        // phone validation
         const phoneRegex = /^\+91\d{10}$/;
         const role = activeTab === "students" ? "student" : "advisor";
-        
-        if (role === 'student') {
+
+        if (role === "student") {
             if (!phoneRegex.test(newUser.studentPhone) || !phoneRegex.test(newUser.parentPhone)) {
-                alert("Please enter valid 10-digit mobile numbers after +91");
+                alert("Please enter valid 10-digit mobile numbers after +91 (e.g., +919876543210)");
                 return;
             }
         } else {
             if (!phoneRegex.test(newUser.phone)) {
-                alert("Please enter a valid 10-digit mobile number after +91");
+                alert("Please enter a valid 10-digit mobile number after +91 (e.g., +919876543210)");
                 return;
             }
+        }
+        
+        if (newUser.name.toLowerCase().includes("test") || newUser.username.toLowerCase().includes("test")) {
+            alert("⚠️ Restriction: Test student creation is not allowed in production.");
+            return;
         }
 
         if (isEditingUser && editingUserId) {
@@ -235,16 +240,20 @@ export default function SimpleAdmin() {
                                                 )}
                                                 <div>
                                                     <div className="font-black text-gray-900 text-xs md:text-sm">{u.name}</div>
-                                                    <div className="text-[8px] md:text-[10px] text-gray-400 uppercase mt-1">{(u as Student).rollNo || u.role} | {u.department}</div>
+                                                    <div className="text-[8px] md:text-[10px] text-gray-400 uppercase mt-1">
+                                                        {(u as Student).rollNo || u.role} | {u.department}
+                                                        {u.role === 'advisor' && ` | ${(u as Advisor).assignedClass}`}
+                                                    </div>
                                                 </div>
                                             </div>
                                         </td>
-                                        <td className="px-4 md:px-10 py-8 text-center">
+                                        <td className="px-4 md:px-10 py-1 md:py-8 text-center">
                                             <div className="text-[10px] font-mono text-gray-400 bg-gray-50 inline-block px-3 py-1 rounded-full">{u.username} | {u.password}</div>
                                             <div className="text-[10px] font-bold text-blue-600 mt-2">{(u as Student).studentPhone || (u as Advisor).phone}</div>
                                         </td>
-                                        <td className="px-4 md:px-10 py-8 text-right">
-                                            <button onClick={() => startEdit(u)} className="p-3 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-100 active:scale-95 transition-all"><Users size={18}/></button>
+                                        <td className="px-4 md:px-10 py-1 md:py-8 text-right space-x-2">
+                                            <button onClick={() => startEdit(u)} className="p-3 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-100 active:scale-95 transition-all"><Edit size={16} /></button>
+                                            <button onClick={() => GlobalStore.deleteUser(u.id)} className="p-3 bg-red-50 text-red-600 rounded-xl hover:bg-red-100 active:scale-95 transition-all"><Trash2 size={16} /></button>
                                         </td>
                                     </tr>
                                 ))}
@@ -258,20 +267,20 @@ export default function SimpleAdmin() {
                         <table className="w-full text-left min-w-[900px]">
                             <thead className="bg-gray-50">
                                 <tr className="uppercase text-[10px] tracking-widest font-black text-gray-400">
-                                    <th className="px-10 py-6">Identity</th>
-                                    <th className="px-10 py-6">Pass Details</th>
-                                    <th className="px-10 py-6">GPS Location</th>
-                                    <th className="px-10 py-6 text-right">Gate Logs</th>
+                                    <th className="px-10 py-6 text-gray-900 uppercase italic">Identity</th>
+                                    <th className="px-10 py-6 text-gray-900 uppercase italic">Pass Details</th>
+                                    <th className="px-10 py-6 text-gray-900 uppercase italic">GPS Location</th>
+                                    <th className="px-10 py-6 text-right text-gray-900 uppercase italic">Gate Logs</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100 font-bold">
-                                {passes.map(p => {
-                                    const student = students.find(s => s.id === p.studentId);
+                                {[...passes].reverse().map(p => {
+                                    const student = users.find(u => u.id === p.studentId);
                                     return (
                                         <tr key={p.id} className="hover:bg-gray-50 transition-colors">
                                             <td className="px-10 py-8 flex items-center gap-4">
                                                 <div className="w-8 h-8 bg-blue-50 text-blue-600 rounded-lg flex items-center justify-center font-black text-[10px]">{student?.name.charAt(0)}</div>
-                                                <div><p className="text-[10px] text-gray-900 uppercase font-black">{student?.name}</p><p className="text-[8px] text-gray-400">{p.type.toUpperCase()} PASS</p></div>
+                                                <div><p className="text-[10px] text-gray-900 uppercase font-black">{student?.name || "Deleted User"}</p><p className="text-[8px] text-gray-400">{p.type.toUpperCase()} PASS</p></div>
                                             </td>
                                             <td className="px-10 py-8 font-mono text-[9px]">{p.date}<br/>{p.startTime}-{p.endTime}</td>
                                             <td className="px-10 py-8">
