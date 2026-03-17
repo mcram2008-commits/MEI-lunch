@@ -1,0 +1,46 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+@layer components {
+  .btn-primary {
+    @apply px-4 py-2 rounded-lg font-semibold transition-all hover:opacity-90 active:scale-95;
+  }
+  .card-premium {
+    @apply p-6 rounded-2xl border border-gray-200 bg-white shadow-sm hover:shadow-md transition-shadow;
+  }
+}
+@layer utilities {
+  @keyframes scan {
+    0% { transform: translateY(0); }
+    100% { transform: translateY(220px); }
+  }
+  @keyframes spin-slow {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+  .animate-scan {
+    animation: scan 2s infinite linear;
+  }
+  .animate-spin-slow {
+    animation: spin-slow 8s infinite linear;
+  }
+}
