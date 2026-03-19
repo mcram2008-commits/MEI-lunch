@@ -19,7 +19,7 @@ export default function AdminPortal() {
     const router = useRouter();
 
     const [newUser, setNewUser] = useState({
-        username: "", password: "", name: "", role: "student" as any,
+        username: "", password: "", name: "", email: "", role: "student" as any,
         rollNo: "", department: "", year: "", section: "",
         parentPhone: "+91", studentPhone: "+91", phone: "+91", assignedClass: "", profileImg: ""
     });
@@ -75,7 +75,7 @@ export default function AdminPortal() {
         }
 
         if (isEditingUser && editingUserId) {
-            const updates: any = { username: newUser.username, password: newUser.password, name: newUser.name, profileImg: newUser.profileImg };
+            const updates: any = { username: newUser.username, password: newUser.password, name: newUser.name, email: newUser.email, profileImg: newUser.profileImg };
             if (role === 'student') {
                 Object.assign(updates, { rollNo: newUser.rollNo, department: newUser.department, year: newUser.year, section: newUser.section, parentPhone: newUser.parentPhone, studentPhone: newUser.studentPhone });
             } else {
@@ -84,7 +84,7 @@ export default function AdminPortal() {
             GlobalStore.updateUser(editingUserId, updates);
         } else {
             const id = Date.now().toString();
-            const userBase = { id, username: newUser.username, password: newUser.password, name: newUser.name, role, profileImg: newUser.profileImg };
+            const userBase = { id, username: newUser.username, password: newUser.password, name: newUser.name, email: newUser.email, role, profileImg: newUser.profileImg };
             if (role === "student") {
                 GlobalStore.addUser({ ...userBase, rollNo: newUser.rollNo, department: newUser.department, year: newUser.year, section: newUser.section, parentPhone: newUser.parentPhone, studentPhone: newUser.studentPhone } as Student);
             } else {
@@ -95,7 +95,7 @@ export default function AdminPortal() {
     };
 
     const resetForm = () => {
-        setNewUser({ username: "", password: "", name: "", role: "student", rollNo: "", department: "", year: "", section: "", parentPhone: "+91", studentPhone: "+91", phone: "+91", assignedClass: "", profileImg: "" });
+        setNewUser({ username: "", password: "", name: "", email: "", role: "student", rollNo: "", department: "", year: "", section: "", parentPhone: "+91", studentPhone: "+91", phone: "+91", assignedClass: "", profileImg: "" });
         setIsAddingUser(false);
         setIsEditingUser(false);
         setEditingUserId(null);
@@ -103,7 +103,7 @@ export default function AdminPortal() {
 
     const startEdit = (user: any) => {
         setNewUser({
-            username: user.username, password: user.password, name: user.name, role: user.role,
+            username: user.username, password: user.password, name: user.name, email: user.email || "", role: user.role,
             rollNo: user.rollNo || "", department: user.department || "", year: user.year || "", section: user.section || "",
             parentPhone: user.parentPhone || "+91", studentPhone: user.studentPhone || "+91", phone: user.phone || "+91", assignedClass: user.assignedClass || "",
             profileImg: user.profileImg || ""
@@ -359,6 +359,10 @@ export default function AdminPortal() {
                                     <div className="space-y-2">
                                         <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Password</label>
                                         <input placeholder="PASSWORD" required type="text" className="w-full h-14 bg-gray-50 rounded-xl px-5 font-bold outline-none focus:ring-2 ring-blue-100" value={newUser.password} onChange={e => setNewUser({ ...newUser, password: e.target.value })} />
+                                    </div>
+                                    <div className="md:col-span-2 space-y-2">
+                                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Email Address</label>
+                                        <input placeholder="Ex: advisor@mei.hostel" required type="email" className="w-full h-14 bg-gray-100 rounded-xl px-5 font-bold outline-none focus:ring-2 ring-blue-100" value={newUser.email} onChange={e => setNewUser({ ...newUser, email: e.target.value })} />
                                     </div>
                                 </div>
 

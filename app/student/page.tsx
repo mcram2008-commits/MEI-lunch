@@ -98,7 +98,7 @@ export default function StudentPortal() {
         const [appY, appM, appD] = passDate.split("-").map(Number);
 
         if (applyingType === "lunch" && todayY === appY && todayM === appM && todayD === appD) {
-            const openHour = selectedSlot === "09:00AM-05:00PM" ? 8 : 11;
+            const openHour = 11;
             const openMin = 30;
             if (now.getHours() < openHour || (now.getHours() === openHour && now.getMinutes() < openMin)) {
                 alert(`Lunch pass application opens at ${openHour}:${openMin} AM.`);
@@ -146,6 +146,7 @@ export default function StudentPortal() {
             lng: userCoords?.lng,
         };
         GlobalStore.addPass(newPass);
+
         setApplyingType(null);
         setReason("");
         setOutTime("");
@@ -467,7 +468,7 @@ export default function StudentPortal() {
                                         <div className="space-y-4">
                                             <label className="text-xs font-black uppercase text-gray-400 tracking-widest block mb-2">Select Time Slot</label>
                                             <div className="grid grid-cols-1 gap-3">
-                                                {["12:00PM-01:00PM", "01:00PM-02:00PM", "09:00AM-05:00PM"].map(slot => (
+                                                {["12:00PM-01:00PM", "01:00PM-02:00PM"].map(slot => (
                                                     <button
                                                         key={slot}
                                                         type="button"
@@ -722,12 +723,12 @@ export default function StudentPortal() {
                 {activeTab === "profile" && (
                     <div className="p-0 animate-in fade-in slide-in-from-top-4">
                         {/* Profile Page Layout like App Image 4 */}
-                        <div className="h-80 bg-gradient-to-b from-[#1e3a8a] to-[#5b21b6] relative flex items-end justify-center pb-12">
-                            <div className="w-48 h-48 bg-white rounded-[2.5rem] border-8 border-white/20 shadow-2xl overflow-hidden flex items-center justify-center p-0">
+                        <div className="h-96 bg-gradient-to-b from-[#1e3a8a] to-[#5b21b6] relative flex items-end justify-center pb-12">
+                            <div className="w-64 h-64 bg-white rounded-[2.5rem] border-8 border-white/20 shadow-2xl overflow-hidden flex items-center justify-center p-0">
                                 {student.profileImg ? (
                                     <img src={student.profileImg} className="w-full h-full object-cover" alt="Profile" />
                                 ) : (
-                                    <UserCircle size={140} className="text-gray-200" />
+                                    <UserCircle size={200} className="text-gray-200" />
                                 )}
                             </div>
                         </div>
@@ -767,7 +768,6 @@ export default function StudentPortal() {
                                 <p className="font-black text-[#1e3a8a] mb-1">Lunch Break Timings</p>
                                 <p className="text-sm font-bold text-gray-500 uppercase tracking-widest mt-2">Slot 1: 12:00 PM to 01:00 PM</p>
                                 <p className="text-sm font-bold text-gray-500 uppercase tracking-widest mt-1">Slot 2: 01:00 PM to 02:00 PM</p>
-                                <p className="text-sm font-bold text-gray-500 uppercase tracking-widest mt-1">Slot 3: 09:00 AM to 05:00 PM</p>
                             </div>
                             <div className="bg-white p-6 rounded-2xl shadow-sm border-l-4 border-purple-600">
                                 <p className="font-black text-purple-600 mb-1">Official Leave</p>

@@ -97,6 +97,25 @@ export default function AdvisorPortal() {
                 const message = `Security Alert: Student ${student.name} (${student.rollNo}) has NOT returned by the lunch deadline (${pass.endTime}). Please contact immediately.`;
                 GlobalStore.sendCustomSMS(student.id, student.parentPhone, message);
                 GlobalStore.updatePass(pass.id, { parentNotified: true });
+
+                // Manual Email Trigger
+                fetch("/api/send-advisor-mail", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        type: 'overdue',
+                        studentName: student.name,
+                        studentRoll: student.rollNo,
+                        studentClass: `${student.department} ${student.year}-${student.section}`,
+                        advisorEmail: advisor.username.includes('@') ? advisor.username : "mcram2008@gmail.com",
+                        passDetails: {
+                            id: pass.id,
+                            type: pass.type,
+                            endTime: pass.endTime,
+                            scannedOutAt: pass.scannedOutAt,
+                        }
+                    }),
+                }).catch(err => console.error("Manual advisor email failed:", err));
             } else {
                 GlobalStore.updatePass(pass.id, { status: "used", scannedInAt: new Date().toISOString() });
                 alert("Student marked as Returned");
@@ -332,8 +351,8 @@ export default function AdvisorPortal() {
                 {activeTab === "profile" && (
                     <div className="animate-in fade-in space-y-8 py-8">
                         <div className="bg-white rounded-[2rem] shadow-sm overflow-hidden border">
-                            <div className="bg-[#1e3a8a] h-24 relative flex justify-center items-end pb-8">
-                                <div className="absolute -bottom-8 w-24 h-24 bg-white rounded-full border-4 border-white shadow-xl overflow-hidden flex items-center justify-center text-[#1e3a8a] font-black text-3xl">
+                            <div className="bg-[#1e3a8a] h-32 relative flex justify-center items-end pb-8">
+                                <div className="absolute -bottom-12 w-48 h-48 bg-white rounded-[2.5rem] border-4 border-white shadow-xl overflow-hidden flex items-center justify-center text-[#1e3a8a] font-black text-6xl">
                                     {(advisor as Advisor).profileImg ? (
                                         <img src={(advisor as Advisor).profileImg} className="w-full h-full object-cover rounded-full" alt="Profile" />
                                     ) : (
@@ -341,7 +360,7 @@ export default function AdvisorPortal() {
                                     )}
                                 </div>
                             </div>
-                            <div className="p-8 pt-12 space-y-8">
+                            <div className="p-8 pt-16 space-y-8">
                                 <div className="text-center border-b pb-8"><p className="text-xs font-black text-gray-400 uppercase tracking-widest mb-1">Advisor Name</p><p className="text-xl font-black text-[#1e3a8a]">{(advisor as Advisor).name}</p></div>
                                 <div className="text-center border-b pb-8"><p className="text-xs font-black text-gray-400 uppercase tracking-widest mb-1">Assigned Jurisdiction</p><p className="text-xl font-black text-green-600 uppercase italic">{(advisor as Advisor).assignedClass} Class</p></div>
                                 <div className="text-center border-b pb-8"><p className="text-xs font-black text-gray-400 uppercase tracking-widest mb-1">Primary Mobile</p><p className="text-xl font-black text-blue-600 italic tracking-widest">{(advisor as Advisor).phone}</p></div>

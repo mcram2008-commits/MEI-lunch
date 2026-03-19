@@ -12,6 +12,7 @@ export interface User {
     password: string;
     role: UserRole;
     name: string;
+    email: string; // Added email field
     profileImg?: string;
 }
 
@@ -54,10 +55,10 @@ export interface Pass {
 
 class PassStore {
     private users: User[] = [
-        { id: "admin1", username: "admin", password: "123", role: "admin", name: "System Admin" },
-        { id: "watchman1", username: "watchman1", password: "123", role: "watchman", name: "Watchman 1 (Entry Control)" },
-        { id: "watchman2", username: "watchman2", password: "123", role: "watchman", name: "Watchman 2 (Exit Control)" },
-        { id: "demo_student", username: "student", password: "123", role: "student", name: "Test Student", rollNo: "MAH001", department: "B.Tech IT", year: "3", section: "A", parentPhone: "9876543210", studentPhone: "8877665544" } as Student
+        { id: "admin1", username: "admin", password: "123", role: "admin", name: "System Admin", email: "admin@mei.hostel" },
+        { id: "watchman1", username: "watchman1", password: "123", role: "watchman", name: "Watchman 1 (Entry Control)", email: "watch1@mei.hostel" },
+        { id: "watchman2", username: "watchman2", password: "123", role: "watchman", name: "Watchman 2 (Exit Control)", email: "watch2@mei.hostel" },
+        { id: "demo_student", username: "student", password: "123", role: "student", name: "Test Student", email: "student@mei.hostel", rollNo: "MAH001", department: "B.Tech IT", year: "3", section: "A", parentPhone: "9876543210", studentPhone: "8877665544" } as Student
     ];
     private passes: Pass[] = [];
     private listeners: (() => void)[] = [];
@@ -140,6 +141,27 @@ class PassStore {
 
                 if (advisor && student) {
                     this.simulateSMS(advisor.id, `ALERT: Student ${student.name} (${student.rollNo}) has not returned from Lunch (End: ${pass.endTime}). Action required.`, advisor.phone);
+                    
+                    // Send Email to Advisor
+                    fetch("/api/send-advisor-mail", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            type: 'overdue',
+                            studentName: student.name,
+                            studentId: student.id,
+                            studentRoll: student.rollNo,
+                            studentClass: `${student.department} ${student.year}-${student.section}`,
+                            advisorEmail: advisor.email || advisor.username.includes('@') ? (advisor.email || advisor.username) : "mcram2008@gmail.com",
+                            passDetails: {
+                                id: pass.id,
+                                type: pass.type,
+                                endTime: pass.endTime,
+                                scannedOutAt: pass.scannedOutAt,
+                            }
+                        }),
+                    }).catch(err => console.error("Advisor Email failed:", err));
+
                     updatedPass.advisorNotified = true;
                     changed = true;
                 }
@@ -192,6 +214,44 @@ class PassStore {
     }
 
     addPass(pass: Pass) {
+        // Check for duplicate pass on the same day
+        const existingPass = this.passes.find(p => p.studentId === pass.studentId && p.date === pass.date && p.status !== 'rejected');
+        
+        if (existingPass) {
+            const student = this.users.find(u => u.id === pass.studentId) as Student;
+            const advisors = this.users.filter(u => u.role === "advisor") as Advisor[];
+            const studentClass = `${student?.department}-${student?.year}-${student?.section}`.toUpperCase();
+            const advisor = advisors.find(a => a.assignedClass.toUpperCase() === studentClass);
+
+            if (student) {
+                // Send Duplicate Alert Email
+                fetch("/api/send-advisor-mail", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        type: 'duplicate',
+                        studentName: student.name,
+                        studentRoll: student.rollNo,
+                        studentClass: `${student.department} ${student.year}-${student.section}`,
+                        advisorEmail: advisor?.email || advisor?.username?.includes('@') ? (advisor?.email || advisor?.username) : "mcram2008@gmail.com",
+                        passDetails: {
+                            date: pass.date,
+                            existingPass: {
+                                type: existingPass.type,
+                                startTime: existingPass.startTime,
+                                endTime: existingPass.endTime
+                            },
+                            newPass: {
+                                type: pass.type,
+                                startTime: pass.startTime,
+                                endTime: pass.endTime
+                            }
+                        }
+                    }),
+                }).catch(err => console.error("Duplicate pass email failed:", err));
+            }
+        }
+
         this.passes.push(pass);
         this.save();
         this.notify();
