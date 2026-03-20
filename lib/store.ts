@@ -6,6 +6,11 @@ export type PassType = "lunch" | "leave";
 export type PassStatus = "pending" | "approved" | "rejected" | "used" | "expired";
 export type UserRole = "student" | "admin" | "advisor" | "watchman";
 
+// Configuration for Notification Delays (in minutes after pass end time)
+export const NOTIFY_DELAY_STUDENT = 1; 
+export const NOTIFY_DELAY_ADVISOR = 6;
+export const NOTIFY_CHECK_INTERVAL = 30000; // 30 seconds
+
 export interface User {
     id: string;
     username: string;
@@ -100,7 +105,7 @@ class PassStore {
             });
 
             // Auto-check expiries every 30 seconds
-            setInterval(() => this.checkExpiries(), 30000);
+            setInterval(() => this.checkExpiries(), NOTIFY_CHECK_INTERVAL);
         }
     }
 
@@ -122,8 +127,8 @@ class PassStore {
 
             let updatedPass = { ...pass };
 
-            // 1 min after: Student msg
-            if (diffMins >= 1 && !pass.studentNotified) {
+            // Student msg
+            if (diffMins >= NOTIFY_DELAY_STUDENT && !pass.studentNotified) {
                 const student = this.users.find(u => u.id === pass.studentId) as Student;
                 if (student) {
                     this.simulateSMS(student.id, `LUNCH PASS EXPIRED! You were supposed to return by ${pass.endTime}. Return to hostel immediately.`, student.studentPhone);
@@ -132,8 +137,8 @@ class PassStore {
                 }
             }
 
-            // 5 mins after (total 6): Advisor msg
-            if (diffMins >= 6 && !pass.advisorNotified) {
+            // Advisor msg
+            if (diffMins >= NOTIFY_DELAY_ADVISOR && !pass.advisorNotified) {
                 const student = this.users.find(u => u.id === pass.studentId) as Student;
                 const advisors = this.users.filter(u => u.role === "advisor") as Advisor[];
                 const studentClass = `${student?.department}-${student?.year}-${student?.section}`.toUpperCase();
@@ -152,7 +157,7 @@ class PassStore {
                             studentId: student.id,
                             studentRoll: student.rollNo,
                             studentClass: `${student.department} ${student.year}-${student.section}`,
-                            advisorEmail: advisor.email || advisor.username.includes('@') ? (advisor.email || advisor.username) : "mcram2008@gmail.com",
+                            advisorEmail: advisor.email || (advisor.username.includes('@') ? (advisor.email || advisor.username) : "mcram2008@gmail.com"),
                             passDetails: {
                                 id: pass.id,
                                 type: pass.type,
