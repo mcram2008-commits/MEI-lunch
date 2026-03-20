@@ -1,12 +1,14 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { GlobalStore, Pass, Student, Advisor, User } from "@/lib/store";
 import {
     ShieldCheck, UserPlus, FileText, Trash2, LogOut, Plus, Search, Filter, ArrowLeft, ArrowRight,
     TrendingUp, Users, ShieldAlert, CheckCircle2, X, Menu, Activity, Pencil, Edit, LayoutDashboard, Database, History, Camera, Info, Building, UserCircle, Phone, Book
 } from "lucide-react";
 import { useRouter } from "next/navigation";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 
 export default function AdminPortal() {
     const [passes, setPasses] = useState<Pass[]>([]);
@@ -16,6 +18,8 @@ export default function AdminPortal() {
     const [isEditingUser, setIsEditingUser] = useState(false);
     const [editingUserId, setEditingUserId] = useState<string | null>(null);
     const [isMenuOpen, setIsMenuOpen] = useState(false);
+    const [deptFilter, setDeptFilter] = useState("all");
+    const [yearFilter, setYearFilter] = useState("all");
     const router = useRouter();
 
     const [newUser, setNewUser] = useState({
@@ -115,6 +119,60 @@ export default function AdminPortal() {
 
     const handleLogout = () => { sessionStorage.clear(); router.push("/login"); };
 
+    const generatePDF = () => {
+        const doc = new jsPDF();
+        const timestamp = new Date().toLocaleString();
+        
+        doc.setFontSize(22);
+        doc.text("MEI HOSTEL SYSTEM - OFFICIAL REPORT", 20, 20);
+        doc.setFontSize(10);
+        doc.text(`Generated on: ${timestamp}`, 20, 30);
+        doc.text(`Category: ${activeTab.toUpperCase()}`, 20, 35);
+        
+        let tableTitle = "";
+        let head: string[][] = [];
+        let body: string[][] = [];
+
+        if (activeTab === 'students') {
+            tableTitle = "Student Registration Record";
+            head = [['Name', 'Roll No', 'Dept', 'Year', 'Parent Phone']];
+            body = students
+                .filter(u => deptFilter === "all" || u.department === deptFilter)
+                .filter(u => yearFilter === "all" || u.year === yearFilter)
+                .map(s => [s.name, s.rollNo, s.department, s.year, s.parentPhone]);
+        } else if (activeTab === 'advisors') {
+            tableTitle = "Faculty & Staff Directory";
+            head = [['Name', 'Dept', 'Class', 'Phone', 'Email']];
+            body = advisors
+                .filter(u => deptFilter === "all" || u.department === deptFilter)
+                .map(a => [a.name, a.department, a.assignedClass, a.phone, a.email || "N/A"]);
+        } else if (activeTab === 'logs') {
+            tableTitle = "Activity & Gate Logs";
+            head = [['Student', 'Type', 'Date', 'Out', 'In', 'Status']];
+            body = [...passes].reverse().filter(p => {
+                const s = users.find(u => u.id === p.studentId) as Student;
+                if (!s) return true;
+                return (deptFilter === 'all' || s.department === deptFilter) && (yearFilter === 'all' || s.year === yearFilter);
+            }).map(p => {
+                const s = users.find(u => u.id === p.studentId);
+                return [s?.name || "Deleted", p.type, p.date, p.scannedOutAt ? new Date(p.scannedOutAt).toLocaleTimeString() : '-', p.scannedInAt ? new Date(p.scannedInAt).toLocaleTimeString() : '-', p.status];
+            });
+        }
+
+        doc.setFontSize(14);
+        doc.text(tableTitle, 20, 50);
+
+        autoTable(doc, {
+            startY: 60,
+            head: head,
+            body: body,
+            theme: 'grid',
+            headStyles: { fillColor: [30, 58, 138] },
+        });
+
+        doc.save(`MEI_Report_${activeTab}_${Date.now()}.pdf`);
+    };
+
     const students = users.filter(u => u.role === "student") as Student[];
     const advisors = users.filter(u => u.role === "advisor") as Advisor[];
 
@@ -183,17 +241,62 @@ export default function AdminPortal() {
                 <div className="grid grid-cols-1 gap-8 animate-in fade-in">
                     {/* Header Title (Blue/Black style) */}
                     <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-4">
-                        <div>
-                            <h2 className="text-3xl font-black text-[#1e3a8a] uppercase tracking-tighter">{activeTab}</h2>
-                            <p className="text-gray-400 font-bold uppercase text-[10px] tracking-[0.2em] mt-2 italic">Institutional Oversight System</p>
+                        <div className="flex flex-col md:flex-row items-start md:items-center gap-6">
+                            <div>
+                                <h2 className="text-3xl font-black text-[#1e3a8a] uppercase tracking-tighter">{activeTab}</h2>
+                                <p className="text-gray-400 font-bold uppercase text-[10px] tracking-[0.2em] mt-2 italic">Institutional Oversight System</p>
+                            </div>
+                            
+                            {activeTab !== 'dashboard' && (
+                                <div className="flex items-center gap-4">
+                                    <div className="space-y-1">
+                                        <p className="text-[8px] font-black text-gray-400 uppercase tracking-widest ml-1">Department</p>
+                                        <select 
+                                            value={deptFilter} 
+                                            onChange={(e) => setDeptFilter(e.target.value)}
+                                            className="bg-white border rounded-lg px-3 py-2 text-xs font-bold text-[#1e3a8a] outline-none"
+                                        >
+                                            <option value="all">ALL DEPTS</option>
+                                            {Array.from(new Set(users.map(u => (u as any).department))).filter(Boolean).sort().map(d => (
+                                                <option key={d as string} value={d as string}>{d as string}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    {activeTab === 'students' && (
+                                        <div className="space-y-1">
+                                            <p className="text-[8px] font-black text-gray-400 uppercase tracking-widest ml-1">Year</p>
+                                            <select 
+                                                value={yearFilter} 
+                                                onChange={(e) => setYearFilter(e.target.value)}
+                                                className="bg-white border rounded-lg px-3 py-2 text-xs font-bold text-[#1e3a8a] outline-none"
+                                            >
+                                                <option value="all">ALL YEARS</option>
+                                                {["I", "II", "III", "IV", "1", "2", "3", "4"].map(y => (
+                                                    <option key={y} value={y}>{y}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                         </div>
-                        {(activeTab === 'students' || activeTab === 'advisors') && (
-                            <button 
-                                onClick={() => setIsAddingUser(true)}
-                                className="bg-[#1e3a8a] text-white px-8 py-4 rounded-xl font-black uppercase text-[10px] tracking-widest shadow-lg shadow-blue-100 flex items-center gap-3 active:scale-95 transition-all"
-                            >
-                                <Plus size={18} /> Add {activeTab === 'students' ? 'Student' : 'Advisor'}
-                            </button>
+                        {(activeTab === 'students' || activeTab === 'advisors' || activeTab === 'logs') && (
+                            <div className="flex gap-4">
+                                <button 
+                                    onClick={generatePDF}
+                                    className="bg-white text-[#1e3a8a] border-2 border-[#1e3a8a] px-8 py-4 rounded-xl font-black uppercase text-[10px] tracking-widest flex items-center gap-3 active:scale-95 transition-all shadow-sm"
+                                >
+                                    <FileText size={18} /> Download PDF
+                                </button>
+                                {activeTab !== 'logs' && (
+                                    <button 
+                                        onClick={() => setIsAddingUser(true)}
+                                        className="bg-[#1e3a8a] text-white px-8 py-4 rounded-xl font-black uppercase text-[10px] tracking-widest shadow-lg shadow-blue-100 flex items-center gap-3 active:scale-95 transition-all"
+                                    >
+                                        <Plus size={18} /> Add {activeTab === 'students' ? 'Student' : 'Advisor'}
+                                    </button>
+                                )}
+                            </div>
                         )}
                     </div>
 
@@ -230,32 +333,74 @@ export default function AdminPortal() {
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y">
-                                        {(activeTab === 'students' ? students : advisors).map(u => (
-                                            <tr key={u.id} className="hover:bg-gray-50 transition-colors">
-                                                <td className="px-8 py-8">
-                                                    <div className="flex items-center gap-6">
-                                                        <div className="w-14 h-14 bg-blue-50 rounded-2xl flex items-center justify-center font-black text-[#1e3a8a] text-xl border shadow-inner overflow-hidden">
-                                                            {u.profileImg ? <img src={u.profileImg} className="w-full h-full object-cover" /> : u.name.charAt(0)}
-                                                        </div>
-                                                        <div>
-                                                            <div className="font-black text-gray-900 text-lg tracking-tight uppercase">{u.name}</div>
-                                                            <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest mt-1">
-                                                                {(u as Student).rollNo || "ADMIN"} | {u.department}
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                </td>
-                                                <td className="px-8 py-8 text-center">
-                                                    <div className="bg-gray-100 px-4 py-3 rounded-xl inline-block text-[10px] font-black text-[#1e3a8a]">
-                                                        {u.username} | {u.password}
-                                                    </div>
-                                                </td>
-                                                <td className="px-8 py-8 text-right flex items-center justify-end gap-3">
-                                                    <button onClick={() => startEdit(u)} className="p-3 bg-blue-50 text-[#1e3a8a] rounded-xl hover:bg-blue-600 hover:text-white transition-all"><Edit size={18} /></button>
-                                                    <button onClick={() => { if(confirm("Are you sure?")) GlobalStore.deleteUser(u.id); }} className="p-3 bg-red-50 text-red-600 rounded-xl hover:bg-red-600 hover:text-white transition-all"><Trash2 size={18} /></button>
-                                                </td>
-                                            </tr>
-                                        ))}
+                                        {(() => {
+                                            const filtered = (activeTab === 'students' ? students : advisors)
+                                                .filter(u => deptFilter === "all" || (u as any).department === deptFilter)
+                                                .filter(u => activeTab !== 'students' || yearFilter === "all" || (u as Student).year === yearFilter);
+
+                                            // Sort by Department, then Year (for students)
+                                            const sorted = [...filtered].sort((a, b) => {
+                                                const dComp = (a as any).department.localeCompare((b as any).department);
+                                                if (dComp !== 0) return dComp;
+                                                if (activeTab === 'students') {
+                                                    return ((a as Student).year || "").localeCompare((b as Student).year || "");
+                                                }
+                                                return 0;
+                                            });
+
+                                            let currentDept = "";
+                                            let currentYear = "";
+
+                                            return sorted.map((u, idx) => {
+                                                const showDeptHeader = (u as any).department !== currentDept;
+                                                const showYearHeader = activeTab === 'students' && ((u as Student).year !== currentYear || showDeptHeader);
+                                                currentDept = (u as any).department;
+                                                if (activeTab === 'students') currentYear = (u as Student).year || "";
+
+                                                return (
+                                                    <React.Fragment key={u.id}>
+                                                        {showDeptHeader && (
+                                                            <tr className="bg-gray-100/50">
+                                                                <td colSpan={3} className="px-8 py-3 text-[9px] font-black text-blue-600 uppercase tracking-[0.3em]">
+                                                                    Department: {currentDept || "UNASSIGNED"}
+                                                                </td>
+                                                            </tr>
+                                                        )}
+                                                        {showYearHeader && (
+                                                            <tr className="bg-white">
+                                                                <td colSpan={3} className="px-10 py-2 text-[8px] font-black text-gray-400 uppercase tracking-widest border-l-4 border-gray-200">
+                                                                    Year: {currentYear || "N/A"}
+                                                                </td>
+                                                            </tr>
+                                                        )}
+                                                        <tr key={u.id} className="hover:bg-gray-50 transition-colors">
+                                                            <td className="px-8 py-8">
+                                                                <div className="flex items-center gap-6">
+                                                                    <div className="w-14 h-14 bg-blue-50 rounded-2xl flex items-center justify-center font-black text-[#1e3a8a] text-xl border shadow-inner overflow-hidden">
+                                                                        {u.profileImg ? <img src={u.profileImg} className="w-full h-full object-cover" alt="Profile" /> : u.name.charAt(0)}
+                                                                    </div>
+                                                                    <div>
+                                                                        <div className="font-black text-gray-900 text-lg tracking-tight uppercase">{u.name}</div>
+                                                                        <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest mt-1">
+                                                                            {(u as Student).rollNo || "ADMIN"} | {u.department} { (u as Student).year ? `| YEAR ${ (u as Student).year }` : '' }
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            </td>
+                                                            <td className="px-8 py-8 text-center">
+                                                                <div className="bg-gray-100 px-4 py-3 rounded-xl inline-block text-[10px] font-black text-[#1e3a8a]">
+                                                                    {u.username} | {u.password}
+                                                                </div>
+                                                            </td>
+                                                            <td className="px-8 py-8 text-right flex items-center justify-end gap-3">
+                                                                <button onClick={() => startEdit(u)} className="p-3 bg-blue-50 text-[#1e3a8a] rounded-xl hover:bg-blue-600 hover:text-white transition-all"><Edit size={18} /></button>
+                                                                <button onClick={() => { if(confirm("Are you sure?")) GlobalStore.deleteUser(u.id); }} className="p-3 bg-red-50 text-red-600 rounded-xl hover:bg-red-600 hover:text-white transition-all"><Trash2 size={18} /></button>
+                                                            </td>
+                                                        </tr>
+                                                    </React.Fragment>
+                                                );
+                                            });
+                                        })()}
                                     </tbody>
                                 </table>
                             </div>
@@ -275,41 +420,75 @@ export default function AdminPortal() {
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y">
-                                        {[...passes].reverse().map(p => {
-                                            const student = users.find(u => u.id === p.studentId);
-                                            return (
-                                                <tr key={p.id} className="hover:bg-gray-50 transition-colors">
-                                                    <td className="px-8 py-8">
-                                                        <div className="flex items-center gap-5">
-                                                            <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center font-black text-gray-500 text-xs">{student?.name.charAt(0)}</div>
-                                                            <div>
-                                                                <p className="text-sm font-black text-gray-900 uppercase">{student?.name || "Deleted"}</p>
-                                                                <p className="text-[8px] font-black text-blue-500 uppercase tracking-[0.2em]">{p.type} Pass {p.id}</p>
-                                                            </div>
-                                                        </div>
-                                                    </td>
-                                                    <td className="px-8 py-8">
-                                                        <div className="flex flex-col gap-1">
-                                                            <span className="text-xs font-black text-gray-700">{p.date}</span>
-                                                            <span className="text-gray-400 font-bold text-[10px] uppercase">{p.startTime} — {p.endTime}</span>
-                                                        </div>
-                                                    </td>
-                                                    <td className="px-8 py-8 text-center text-[10px] font-black uppercase italic text-gray-400">
-                                                        {p.lat ? "GPS Verified" : "Manual Log"}
-                                                    </td>
-                                                    <td className="px-8 py-8 text-right">
-                                                        <div className="flex flex-col gap-2 items-end">
-                                                            <div className={`text-[9px] font-black px-3 py-1 rounded-lg ${p.scannedOutAt ? 'bg-orange-50 text-orange-600' : 'bg-gray-50 text-gray-300'}`}>
-                                                                EX: {p.scannedOutAt ? new Date(p.scannedOutAt).toLocaleTimeString() : '---'}
-                                                            </div>
-                                                            <div className={`text-[9px] font-black px-3 py-1 rounded-lg ${p.scannedInAt ? 'bg-green-50 text-green-600' : 'bg-gray-50 text-gray-300'}`}>
-                                                                EN: {p.scannedInAt ? new Date(p.scannedInAt).toLocaleTimeString() : '---'}
-                                                            </div>
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            );
-                                        })}
+                                        {(() => {
+                                            const filtered = [...passes].reverse().filter(p => {
+                                                const student = users.find(u => u.id === p.studentId) as Student;
+                                                if (!student) return true;
+                                                const matchesDept = deptFilter === "all" || student.department === deptFilter;
+                                                const matchesYear = yearFilter === "all" || student.year === yearFilter;
+                                                return matchesDept && matchesYear;
+                                            });
+
+                                            // Group by Department
+                                            const sorted = [...filtered].sort((a, b) => {
+                                                const sA = users.find(u => u.id === a.studentId) as Student;
+                                                const sB = users.find(u => u.id === b.studentId) as Student;
+                                                if (!sA || !sB) return 0;
+                                                return sA.department.localeCompare(sB.department);
+                                            });
+
+                                            let currentDept = "";
+
+                                            return sorted.map(p => {
+                                                const student = users.find(u => u.id === p.studentId) as Student;
+                                                const showDeptHeader = student && student.department !== currentDept;
+                                                if (student) currentDept = student.department;
+
+                                                return (
+                                                    <React.Fragment key={p.id}>
+                                                        {showDeptHeader && (
+                                                            <tr className="bg-gray-100/50">
+                                                                <td colSpan={4} className="px-8 py-3 text-[9px] font-black text-blue-600 uppercase tracking-[0.3em]">
+                                                                    Log Section: {currentDept}
+                                                                </td>
+                                                            </tr>
+                                                        )}
+                                                        <tr key={p.id} className="hover:bg-gray-50 transition-colors">
+                                                            <td className="px-8 py-8">
+                                                                <div className="flex items-center gap-5">
+                                                                    <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center font-black text-gray-500 text-xs">
+                                                                        {student?.profileImg ? <img src={student.profileImg} className="w-full h-full object-cover rounded-lg" alt="S" /> : student?.name.charAt(0) || "?"}
+                                                                    </div>
+                                                                    <div>
+                                                                        <p className="text-sm font-black text-gray-900 uppercase">{student?.name || "Deleted Student"}</p>
+                                                                        <p className="text-[8px] font-black text-blue-500 uppercase tracking-[0.2em]">{p.type} Pass {p.id}</p>
+                                                                    </div>
+                                                                </div>
+                                                            </td>
+                                                            <td className="px-8 py-8">
+                                                                <div className="flex flex-col gap-1">
+                                                                    <span className="text-xs font-black text-gray-700">{p.date}</span>
+                                                                    <span className="text-gray-400 font-bold text-[10px] uppercase">{p.startTime} — {p.endTime}</span>
+                                                                </div>
+                                                            </td>
+                                                            <td className="px-8 py-8 text-center text-[10px] font-black uppercase italic text-gray-400">
+                                                                {p.lat ? "GPS Verified" : "Manual Log"}
+                                                            </td>
+                                                            <td className="px-8 py-8 text-right">
+                                                                <div className="flex flex-col gap-2 items-end">
+                                                                    <div className={`text-[9px] font-black px-3 py-1 rounded-lg ${p.scannedOutAt ? 'bg-orange-50 text-orange-600' : 'bg-gray-50 text-gray-300'}`}>
+                                                                        EX: {p.scannedOutAt ? new Date(p.scannedOutAt).toLocaleTimeString() : '---'}
+                                                                    </div>
+                                                                    <div className={`text-[9px] font-black px-3 py-1 rounded-lg ${p.scannedInAt ? 'bg-green-50 text-green-600' : 'bg-gray-50 text-gray-300'}`}>
+                                                                        EN: {p.scannedInAt ? new Date(p.scannedInAt).toLocaleTimeString() : '---'}
+                                                                    </div>
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    </React.Fragment>
+                                                );
+                                            });
+                                        })()}
                                     </tbody>
                                 </table>
                             </div>

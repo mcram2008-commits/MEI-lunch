@@ -17,6 +17,8 @@
     "clsx": "^2.1.1",
     "form-data": "^4.0.5",
     "html5-qrcode": "^2.3.8",
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.7",
     "lucide-react": "^0.469.0",
     "mailgun.js": "^12.7.1",
     "next": "15.1.9",

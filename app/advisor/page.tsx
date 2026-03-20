@@ -16,7 +16,8 @@ export default function AdvisorPortal() {
     const [notEntryPasses, setNotEntryPasses] = useState<Pass[]>([]);
     const [duplicatePasses, setDuplicatePasses] = useState<Pass[]>([]);
     const [isMenuOpen, setIsMenuOpen] = useState(false);
-    const [activeTab, setActiveTab] = useState<"pending" | "profile" | "history" | "late">("pending");
+    const [activeTab, setActiveTab] = useState<"pending" | "profile" | "history" | "late" | "staff">("pending");
+    const [allAdvisors, setAllAdvisors] = useState<Advisor[]>([]);
     const router = useRouter();
 
     useEffect(() => {
@@ -78,6 +79,7 @@ export default function AdvisorPortal() {
 
             // Keep the old latePasses for compatibility with any existing UI refs, but we'll show new lists
             setLatePasses(notEntry); 
+            setAllAdvisors([...GlobalStore.getUsers().filter(u => u.role === 'advisor') as Advisor[]]);
         };
         update();
         return GlobalStore.subscribe(update);
@@ -182,10 +184,16 @@ export default function AdvisorPortal() {
                             <History size={20} /> Pass History
                         </button>
                         <button
+                            onClick={() => { setActiveTab("staff"); setIsMenuOpen(false); }}
+                            className={`w-full flex items-center gap-4 p-4 rounded-xl font-bold transition-colors ${activeTab === 'staff' ? 'bg-white/10' : 'hover:bg-white/5'}`}
+                        >
+                            <User size={20} /> Dept Staff
+                        </button>
+                        <button
                             onClick={() => { setActiveTab("profile"); setIsMenuOpen(false); }}
                             className={`w-full flex items-center gap-4 p-4 rounded-xl font-bold transition-colors ${activeTab === 'profile' ? 'bg-white/10' : 'hover:bg-white/5'}`}
                         >
-                            <User size={20} /> My Profile
+                            <UserCheck size={20} /> My Profile
                         </button>
                         <hr className="border-white/10 my-6" />
                         <button onClick={handleLogout} className="w-full flex items-center gap-4 p-4 rounded-xl font-bold text-red-100 hover:bg-red-500/10">
@@ -345,6 +353,28 @@ export default function AdvisorPortal() {
                                 )}
                             </div>
                         )}
+                    </div>
+                )}
+
+                {activeTab === "staff" && (
+                    <div className="animate-in fade-in space-y-6">
+                        <div className="flex items-center justify-between mb-4">
+                            <h2 className="font-black text-gray-500 uppercase tracking-widest text-xs">{advisor.department} Department Faculty</h2>
+                        </div>
+                        <div className="grid grid-cols-1 gap-4">
+                            {allAdvisors.filter(a => a.department === advisor.department).map(staff => (
+                                <div key={staff.id} className="bg-white p-5 rounded-2xl border flex items-center gap-5 shadow-sm">
+                                    <div className="w-14 h-14 bg-blue-50 rounded-2xl flex items-center justify-center font-black text-[#1e3a8a] border overflow-hidden">
+                                        {staff.profileImg ? <img src={staff.profileImg} className="w-full h-full object-cover" alt="Staff" /> : staff.name.charAt(0)}
+                                    </div>
+                                    <div>
+                                        <p className="font-black text-gray-900 uppercase">{staff.name}</p>
+                                        <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">{staff.assignedClass} | {staff.phone}</p>
+                                    </div>
+                                    {staff.id === advisor.id && <span className="ml-auto bg-green-100 text-green-600 text-[8px] font-black px-2 py-1 rounded-lg uppercase">You</span>}
+                                </div>
+                            ))}
+                        </div>
                     </div>
                 )}
 
