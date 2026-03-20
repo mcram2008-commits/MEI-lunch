@@ -1,5 +1,8 @@
 "use client";
 
+import { databases, APPWRITE_CONFIG } from "./appwrite";
+import { ID, Query } from "appwrite";
+
 // Simple singleton store for managing app state locally with localStorage persistence.
 
 export type PassType = "lunch" | "leave";
@@ -81,11 +84,19 @@ class PassStore {
 
             if (savedUsers) {
                 const parsedUsers = JSON.parse(savedUsers);
-                // Ensure default users exist
-                this.users = [{ id: "admin1", username: "admin", password: "123", role: "admin", name: "System Admin" },
-                    { id: "watchman1", username: "watchman1", password: "123", role: "watchman", name: "Watchman 1 (Entry Control)" },
-                    { id: "watchman2", username: "watchman2", password: "123", role: "watchman", name: "Watchman 2 (Exit Control)" },
-                    ...parsedUsers.filter((u: User) => u.id !== "admin1" && u.id !== "watchman_common")];
+                // Ensure default users always exist and are merged correctly
+                const defaultUsers = [
+                    { id: "admin1", username: "admin", password: "123", role: "admin", name: "System Admin", email: "admin@mei.hostel" },
+                    { id: "watchman1", username: "watchman1", password: "123", role: "watchman", name: "Watchman 1 (Entry Control)", email: "watch1@mei.hostel" },
+                    { id: "watchman2", username: "watchman2", password: "123", role: "watchman", name: "Watchman 2 (Exit Control)", email: "watch2@mei.hostel" },
+                    { id: "demo_student", username: "student", password: "123", role: "student", name: "Test Student", email: "student@mei.hostel", rollNo: "MAH001", department: "B.Tech IT", year: "3", section: "A", parentPhone: "9876543210", studentPhone: "8877665544" } as Student
+                ];
+                
+                const filteredParsed = parsedUsers.filter((u: User) => 
+                    !defaultUsers.some(d => d.id === u.id || d.username === u.username)
+                );
+
+                this.users = [...defaultUsers, ...filteredParsed];
             }
             
             // Sync across tabs
@@ -96,16 +107,130 @@ class PassStore {
                 }
                 if (e.key === 'mei_users' && e.newValue) {
                     const parsedUsers = JSON.parse(e.newValue);
-                    this.users = [{ id: "admin1", username: "admin", password: "123", role: "admin", name: "System Admin" },
-                    { id: "watchman1", username: "watchman1", password: "123", role: "watchman", name: "Watchman 1 (Entry Control)" },
-                    { id: "watchman2", username: "watchman2", password: "123", role: "watchman", name: "Watchman 2 (Exit Control)" },
-                    ...parsedUsers.filter((u: User) => u.id !== "admin1" && u.id !== "watchman_common")];
+                    const defaultUsers = [
+                        { id: "admin1", username: "admin", password: "123", role: "admin", name: "System Admin" },
+                        { id: "watchman1", username: "watchman1", password: "123", role: "watchman", name: "Watchman 1 (Entry Control)" },
+                        { id: "watchman2", username: "watchman2", password: "123", role: "watchman", name: "Watchman 2 (Exit Control)" },
+                        { id: "demo_student", username: "student", password: "123", role: "student", name: "Test Student" }
+                    ];
+                    const filteredParsed = parsedUsers.filter((u: User) => 
+                        !defaultUsers.some(d => d.id === u.id || d.username === u.username)
+                    );
+                    this.users = [...defaultUsers, ...filteredParsed] as User[];
                     this.notify();
                 }
             });
 
             // Auto-check expiries every 30 seconds
             setInterval(() => this.checkExpiries(), NOTIFY_CHECK_INTERVAL);
+
+            // Initial Cloud Sync
+            this.syncWithCloud();
+        }
+    }
+
+    private async syncWithCloud() {
+        if (!process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID) return;
+        
+        try {
+            console.log("Syncing with Appwrite Cloud...");
+            
+            // Sync Users
+            const userDocs = await databases.listDocuments(
+                APPWRITE_CONFIG.databaseId,
+                APPWRITE_CONFIG.usersCollectionId
+            );
+            
+            if (userDocs.documents.length > 0) {
+                const cloudUsers = userDocs.documents.map(doc => {
+                    const { $id, $createdAt, $updatedAt, $permissions, $databaseId, $collectionId, ...data } = doc;
+                    return { ...data, id: $id } as unknown as User;
+                });
+                
+                const defaultUsers = [
+                    { id: "admin1", username: "admin", password: "123", role: "admin", name: "System Admin" },
+                    { id: "watchman1", username: "watchman1", password: "123", role: "watchman", name: "Watchman 1 (Entry Control)" },
+                    { id: "watchman2", username: "watchman2", password: "123", role: "watchman", name: "Watchman 2 (Exit Control)" },
+                    { id: "demo_student", username: "student", password: "123", role: "student", name: "Test Student" }
+                ];
+
+                const localOnly = this.users.filter(u => !defaultUsers.some(d => d.id === u.id) && !cloudUsers.some(c => c.id === u.id));
+                this.users = [...defaultUsers, ...cloudUsers, ...localOnly] as User[];
+                
+                // If we have local-only users, push them to cloud
+                for (const u of localOnly) {
+                    await this.pushUserToCloud(u);
+                }
+            }
+
+            // Sync Passes
+            const passDocs = await databases.listDocuments(
+                APPWRITE_CONFIG.databaseId,
+                APPWRITE_CONFIG.passesCollectionId,
+                [Query.limit(100), Query.orderDesc("$createdAt")]
+            );
+
+            if (passDocs.documents.length > 0) {
+                const cloudPasses = passDocs.documents.map(doc => {
+                    const { $id, $createdAt, $updatedAt, $permissions, $databaseId, $collectionId, ...data } = doc;
+                    return { ...data, id: $id } as unknown as Pass;
+                });
+
+                const localOnly = this.passes.filter(p => !cloudPasses.some(c => c.id === p.id));
+                this.passes = [...cloudPasses, ...localOnly].sort((a, b) => new Date(b.appliedAt).getTime() - new Date(a.appliedAt).getTime());
+
+                for (const p of localOnly) {
+                    await this.pushPassToCloud(p);
+                }
+            }
+
+            this.save();
+            this.notify();
+            console.log("Cloud Sync Complete.");
+        } catch (error) {
+            console.error("Cloud sync failed:", error);
+        }
+    }
+
+    private async pushUserToCloud(user: User) {
+        if (!process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID || user.id.startsWith('admin') || user.id.startsWith('watchman') || user.id === 'demo_student') return;
+        try {
+            await databases.createDocument(
+                APPWRITE_CONFIG.databaseId,
+                APPWRITE_CONFIG.usersCollectionId,
+                user.id,
+                user
+            );
+        } catch (e: any) {
+            if (e.code === 409) {
+                await databases.updateDocument(
+                    APPWRITE_CONFIG.databaseId,
+                    APPWRITE_CONFIG.usersCollectionId,
+                    user.id,
+                    user
+                );
+            }
+        }
+    }
+
+    private async pushPassToCloud(pass: Pass) {
+        if (!process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID) return;
+        try {
+            await databases.createDocument(
+                APPWRITE_CONFIG.databaseId,
+                APPWRITE_CONFIG.passesCollectionId,
+                pass.id,
+                pass
+            );
+        } catch (e: any) {
+            if (e.code === 409) {
+                await databases.updateDocument(
+                    APPWRITE_CONFIG.databaseId,
+                    APPWRITE_CONFIG.passesCollectionId,
+                    pass.id,
+                    pass
+                );
+            }
         }
     }
 
@@ -195,6 +320,7 @@ class PassStore {
         this.users.push(user);
         this.save();
         this.notify();
+        this.pushUserToCloud(user);
         
         // Notify user about registration
         let phone = "";
@@ -210,12 +336,19 @@ class PassStore {
         this.users = this.users.map(u => u.id === id ? { ...u, ...updates } : u);
         this.save();
         this.notify();
+        const updated = this.users.find(u => u.id === id);
+        if (updated) this.pushUserToCloud(updated);
     }
 
     deleteUser(id: string) {
+        const user = this.users.find(u => u.id === id);
         this.users = this.users.filter(u => u.id !== id);
         this.save();
         this.notify();
+        if (user && process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID) {
+            databases.deleteDocument(APPWRITE_CONFIG.databaseId, APPWRITE_CONFIG.usersCollectionId, id)
+                .catch(e => console.error("Cloud delete failed:", e));
+        }
     }
 
     addPass(pass: Pass) {
@@ -260,6 +393,7 @@ class PassStore {
         this.passes.push(pass);
         this.save();
         this.notify();
+        this.pushPassToCloud(pass);
         
         const student = this.users.find(u => u.id === pass.studentId) as Student;
         // Only lunch pass messages as per request (aside from application confirmation maybe)
@@ -274,6 +408,7 @@ class PassStore {
         this.notify();
 
         const pass = this.passes.find(p => p.id === id);
+        if (pass) this.pushPassToCloud(pass);
         if (pass && updates.status === "approved" && pass.type === 'lunch') {
             const student = this.users.find(u => u.id === pass.studentId) as Student;
             if (student) {
