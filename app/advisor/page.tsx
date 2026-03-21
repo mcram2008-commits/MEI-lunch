@@ -16,7 +16,7 @@ export default function AdvisorPortal() {
     const [notEntryPasses, setNotEntryPasses] = useState<Pass[]>([]);
     const [duplicatePasses, setDuplicatePasses] = useState<Pass[]>([]);
     const [isMenuOpen, setIsMenuOpen] = useState(false);
-    const [activeTab, setActiveTab] = useState<"pending" | "profile" | "history" | "late" | "staff">("pending");
+    const [activeTab, setActiveTab] = useState<"pending" | "profile" | "history" | "late">("pending");
     const [allAdvisors, setAllAdvisors] = useState<Advisor[]>([]);
     const router = useRouter();
 
@@ -48,14 +48,20 @@ export default function AdvisorPortal() {
             }).sort((a, b) => new Date(b.appliedAt).getTime() - new Date(a.appliedAt).getTime());
             setHistoryRequests(history);
 
-            // Not Entry List: Scanned Out but NOT Scanned In
+            // Not Entry List: Scanned Out but NOT Scanned In AND Overdue
             const notEntry = allPasses.filter(p => {
                 const student = allStudents.find(s => s.id === p.studentId);
                 if (!student) return false;
                 const studentClass = `${student.department}-${student.year}-${student.section}`.toUpperCase();
                 if (studentClass !== user.assignedClass.toUpperCase()) return false;
                 
-                return p.scannedOutAt && !p.scannedInAt;
+                // Only those who went out but didn't return AND are past their deadline
+                if (!p.scannedOutAt || p.scannedInAt || !p.endTime) return false;
+                
+                const [endH, endM] = p.endTime.split(":").map(Number);
+                const endTimeDate = new Date();
+                endTimeDate.setHours(endH, endM, 0);
+                return now > endTimeDate;
             });
             setNotEntryPasses(notEntry);
 
@@ -99,25 +105,7 @@ export default function AdvisorPortal() {
                 const message = `Security Alert: Student ${student.name} (${student.rollNo}) has NOT returned by the lunch deadline (${pass.endTime}). Please contact immediately.`;
                 GlobalStore.sendCustomSMS(student.id, student.parentPhone, message);
                 GlobalStore.updatePass(pass.id, { parentNotified: true });
-
-                // Manual Email Trigger
-                fetch("/api/send-advisor-mail", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        type: 'overdue',
-                        studentName: student.name,
-                        studentRoll: student.rollNo,
-                        studentClass: `${student.department} ${student.year}-${student.section}`,
-                        advisorEmail: advisor.username.includes('@') ? advisor.username : "mcram2008@gmail.com",
-                        passDetails: {
-                            id: pass.id,
-                            type: pass.type,
-                            endTime: pass.endTime,
-                            scannedOutAt: pass.scannedOutAt,
-                        }
-                    }),
-                }).catch(err => console.error("Manual advisor email failed:", err));
+                // Manual Email Trigger REMOVED as per request
             } else {
                 GlobalStore.updatePass(pass.id, { status: "used", scannedInAt: new Date().toISOString() });
                 alert("Student marked as Returned");
@@ -182,12 +170,6 @@ export default function AdvisorPortal() {
                             className={`w-full flex items-center gap-4 p-4 rounded-xl font-bold transition-colors ${activeTab === 'history' ? 'bg-white/10' : 'hover:bg-white/5'}`}
                         >
                             <History size={20} /> Pass History
-                        </button>
-                        <button
-                            onClick={() => { setActiveTab("staff"); setIsMenuOpen(false); }}
-                            className={`w-full flex items-center gap-4 p-4 rounded-xl font-bold transition-colors ${activeTab === 'staff' ? 'bg-white/10' : 'hover:bg-white/5'}`}
-                        >
-                            <User size={20} /> Dept Staff
                         </button>
                         <button
                             onClick={() => { setActiveTab("profile"); setIsMenuOpen(false); }}
@@ -300,20 +282,25 @@ export default function AdvisorPortal() {
                                                             <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest">Exited at {new Date(pass.scannedOutAt!).toLocaleTimeString()}</p>
                                                         </div>
                                                     </div>
-                                                    <div className="flex gap-2 w-full md:w-auto">
-                                                        <button 
-                                                            onClick={() => handleParentEscalation(pass, "enter")} 
-                                                            className="flex-1 md:flex-none px-6 py-3 bg-green-50 text-green-700 rounded-xl font-black text-[9px] uppercase border border-green-100"
-                                                        >
-                                                            Mark Entry
-                                                        </button>
-                                                        <button 
-                                                            onClick={() => handleParentEscalation(pass, "not")} 
-                                                            className="flex-1 md:flex-none px-6 py-3 bg-red-600 text-white rounded-xl font-black text-[9px] uppercase shadow-lg shadow-red-100"
-                                                        >
-                                                            Not Returned
-                                                        </button>
-                                                    </div>
+                                                        <div className="flex flex-col gap-2 w-full md:w-auto">
+                                                            <div className="flex items-center justify-between mb-2">
+                                                                <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Manual Edit</span>
+                                                            </div>
+                                                            <div className="flex gap-2">
+                                                                <button 
+                                                                    onClick={() => handleParentEscalation(pass, "enter")} 
+                                                                    className="flex-1 md:flex-none px-6 py-3 bg-green-50 text-green-700 rounded-xl font-black text-[9px] uppercase border border-green-100"
+                                                                >
+                                                                    Mark Entered
+                                                                </button>
+                                                                <button 
+                                                                    onClick={() => handleParentEscalation(pass, "not")} 
+                                                                    className="flex-1 md:flex-none px-6 py-3 bg-red-600 text-white rounded-xl font-black text-[9px] uppercase shadow-lg shadow-red-100"
+                                                                >
+                                                                    Not Entry
+                                                                </button>
+                                                            </div>
+                                                        </div>
                                                 </div>
                                             );
                                         })}
@@ -356,27 +343,6 @@ export default function AdvisorPortal() {
                     </div>
                 )}
 
-                {activeTab === "staff" && (
-                    <div className="animate-in fade-in space-y-6">
-                        <div className="flex items-center justify-between mb-4">
-                            <h2 className="font-black text-gray-500 uppercase tracking-widest text-xs">{advisor.department} Department Faculty</h2>
-                        </div>
-                        <div className="grid grid-cols-1 gap-4">
-                            {allAdvisors.filter(a => a.department === advisor.department).map(staff => (
-                                <div key={staff.id} className="bg-white p-5 rounded-2xl border flex items-center gap-5 shadow-sm">
-                                    <div className="w-14 h-14 bg-blue-50 rounded-2xl flex items-center justify-center font-black text-[#1e3a8a] border overflow-hidden">
-                                        {staff.profileImg ? <img src={staff.profileImg} className="w-full h-full object-cover" alt="Staff" /> : staff.name.charAt(0)}
-                                    </div>
-                                    <div>
-                                        <p className="font-black text-gray-900 uppercase">{staff.name}</p>
-                                        <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">{staff.assignedClass} | {staff.phone}</p>
-                                    </div>
-                                    {staff.id === advisor.id && <span className="ml-auto bg-green-100 text-green-600 text-[8px] font-black px-2 py-1 rounded-lg uppercase">You</span>}
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                )}
 
                 {activeTab === "profile" && (
                     <div className="animate-in fade-in space-y-8 py-8">

@@ -241,7 +241,7 @@ class PassStore {
         let changed = false;
 
         this.passes = this.passes.map(pass => {
-            if (pass.type !== "lunch" || pass.status !== "approved" || !pass.endTime) return pass;
+            if (pass.type !== "lunch" || pass.status !== "approved" || !pass.endTime || !pass.scannedOutAt) return pass;
 
             // Simple time parser (HH:MM)
             const [endH, endM] = pass.endTime.split(":").map(Number);
