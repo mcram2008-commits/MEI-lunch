@@ -1,7 +1,7 @@
 "use client";
 
-import { databases, APPWRITE_CONFIG } from "./appwrite";
-import { ID, Query } from "appwrite";
+import { supabase, SUPABASE_CONFIG } from "./supabase";
+
 
 // Simple singleton store for managing app state locally with localStorage persistence.
 
@@ -130,28 +130,24 @@ class PassStore {
     }
 
     private async syncWithCloud() {
-        if (!process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID) return;
+        if (!process.env.NEXT_PUBLIC_SUPABASE_URL) return;
         
         try {
-            console.log("Syncing with Appwrite Cloud...");
+            console.log("Syncing with Supabase Cloud...");
             
             // Sync Users
-            const userDocs = await databases.listDocuments(
-                APPWRITE_CONFIG.databaseId,
-                APPWRITE_CONFIG.usersCollectionId
-            );
+            const { data: cloudUsers, error: userError } = await supabase
+                .from(SUPABASE_CONFIG.usersTable)
+                .select('*');
             
-            if (userDocs.documents.length > 0) {
-                const cloudUsers = userDocs.documents.map(doc => {
-                    const { $id, $createdAt, $updatedAt, $permissions, $databaseId, $collectionId, ...data } = doc;
-                    return { ...data, id: $id } as unknown as User;
-                });
-                
+            if (userError) throw userError;
+            
+            if (cloudUsers && cloudUsers.length > 0) {
                 const defaultUsers = [
-                    { id: "admin1", username: "admin", password: "123", role: "admin", name: "System Admin" },
-                    { id: "watchman1", username: "watchman1", password: "123", role: "watchman", name: "Watchman 1 (Entry Control)" },
-                    { id: "watchman2", username: "watchman2", password: "123", role: "watchman", name: "Watchman 2 (Exit Control)" },
-                    { id: "demo_student", username: "student", password: "123", role: "student", name: "Test Student" }
+                    { id: "admin1", username: "admin", password: "123", role: "admin", name: "System Admin", email: "admin@mei.hostel" },
+                    { id: "watchman1", username: "watchman1", password: "123", role: "watchman", name: "Watchman 1 (Entry Control)", email: "watch1@mei.hostel" },
+                    { id: "watchman2", username: "watchman2", password: "123", role: "watchman", name: "Watchman 2 (Exit Control)", email: "watch2@mei.hostel" },
+                    { id: "demo_student", username: "student", password: "123", role: "student", name: "Test Student", email: "student@mei.hostel", rollNo: "MAH001", department: "B.Tech IT", year: "3", section: "A", parentPhone: "9876543210", studentPhone: "8877665544" } as Student
                 ];
 
                 const localOnly = this.users.filter(u => !defaultUsers.some(d => d.id === u.id) && !cloudUsers.some(c => c.id === u.id));
@@ -164,18 +160,15 @@ class PassStore {
             }
 
             // Sync Passes
-            const passDocs = await databases.listDocuments(
-                APPWRITE_CONFIG.databaseId,
-                APPWRITE_CONFIG.passesCollectionId,
-                [Query.limit(100), Query.orderDesc("$createdAt")]
-            );
+            const { data: cloudPasses, error: passError } = await supabase
+                .from(SUPABASE_CONFIG.passesTable)
+                .select('*')
+                .order('appliedAt', { ascending: false })
+                .limit(100);
 
-            if (passDocs.documents.length > 0) {
-                const cloudPasses = passDocs.documents.map(doc => {
-                    const { $id, $createdAt, $updatedAt, $permissions, $databaseId, $collectionId, ...data } = doc;
-                    return { ...data, id: $id } as unknown as Pass;
-                });
+            if (passError) throw passError;
 
+            if (cloudPasses && cloudPasses.length > 0) {
                 const localOnly = this.passes.filter(p => !cloudPasses.some(c => c.id === p.id));
                 this.passes = [...cloudPasses, ...localOnly].sort((a, b) => new Date(b.appliedAt).getTime() - new Date(a.appliedAt).getTime());
 
@@ -193,46 +186,32 @@ class PassStore {
     }
 
     private async pushUserToCloud(user: User) {
-        if (!process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID || user.id.startsWith('admin') || user.id.startsWith('watchman') || user.id === 'demo_student') return;
+        if (!process.env.NEXT_PUBLIC_SUPABASE_URL || user.id.startsWith('admin') || user.id.startsWith('watchman') || user.id === 'demo_student') return;
         try {
-            await databases.createDocument(
-                APPWRITE_CONFIG.databaseId,
-                APPWRITE_CONFIG.usersCollectionId,
-                user.id,
-                user
-            );
+            const { error } = await supabase
+                .from(SUPABASE_CONFIG.usersTable)
+                .upsert([user], { onConflict: 'id' });
+            
+            if (error) throw error;
         } catch (e: any) {
-            if (e.code === 409) {
-                await databases.updateDocument(
-                    APPWRITE_CONFIG.databaseId,
-                    APPWRITE_CONFIG.usersCollectionId,
-                    user.id,
-                    user
-                );
-            }
+            console.error("User push failed:", e);
         }
     }
 
+
     private async pushPassToCloud(pass: Pass) {
-        if (!process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID) return;
+        if (!process.env.NEXT_PUBLIC_SUPABASE_URL) return;
         try {
-            await databases.createDocument(
-                APPWRITE_CONFIG.databaseId,
-                APPWRITE_CONFIG.passesCollectionId,
-                pass.id,
-                pass
-            );
+            const { error } = await supabase
+                .from(SUPABASE_CONFIG.passesTable)
+                .upsert([pass], { onConflict: 'id' });
+            
+            if (error) throw error;
         } catch (e: any) {
-            if (e.code === 409) {
-                await databases.updateDocument(
-                    APPWRITE_CONFIG.databaseId,
-                    APPWRITE_CONFIG.passesCollectionId,
-                    pass.id,
-                    pass
-                );
-            }
+            console.error("Pass push failed:", e);
         }
     }
+
 
     private checkExpiries() {
         if (typeof window === "undefined") return;
@@ -345,10 +324,15 @@ class PassStore {
         this.users = this.users.filter(u => u.id !== id);
         this.save();
         this.notify();
-        if (user && process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID) {
-            databases.deleteDocument(APPWRITE_CONFIG.databaseId, APPWRITE_CONFIG.usersCollectionId, id)
-                .catch(e => console.error("Cloud delete failed:", e));
+        if (user && process.env.NEXT_PUBLIC_SUPABASE_URL) {
+            supabase.from(SUPABASE_CONFIG.usersTable)
+                .delete()
+                .eq('id', id)
+                .then(({ error }) => {
+                    if (error) console.error("Cloud delete failed:", error);
+                });
         }
+
     }
 
     addPass(pass: Pass) {

@@ -1,0 +1,9 @@
+{
+    "css.validate": false,
+    "tailwindCSS.includeLanguages": {
+        "plaintext": "css"
+    },
+    "tailwindCSS.experimental.classRegex": [
+        ["(?:twMerge|twJoin|clsx|cva)\\(([^)]+)\\)", "[\"'`]([^\"'`]+)[\"'`]"]
+    ]
+}

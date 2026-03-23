@@ -1,3 +1,5 @@
+import animate from "tailwindcss-animate";
+
 /** @type {import('tailwindcss').Config} */
 export default {
     content: [
@@ -11,13 +13,13 @@ export default {
                 background: "var(--background)",
                 foreground: "var(--foreground)",
                 primary: {
-                    blue: "#1e40af",
-                    red: "#991b1b",
-                    green: "#166534",
-                    orange: "#9a3412",
+                    blue: "var(--primary-blue)",
+                    red: "var(--primary-red)",
+                    green: "var(--primary-green)",
+                    orange: "var(--primary-orange)",
                 },
             },
         },
     },
-    plugins: [],
+    plugins: [animate],
 };
