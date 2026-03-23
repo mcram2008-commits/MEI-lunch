@@ -41,10 +41,11 @@ CREATE TABLE IF NOT EXISTS passes (
     "verifiedReturn" BOOLEAN DEFAULT FALSE
 );
 
--- Enable RLS (Optional but recommended)
--- ALTER TABLE users ENABLE ROW LEVEL SECURITY;
--- ALTER TABLE passes ENABLE ROW LEVEL SECURITY;
+-- Enable RLS
+ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE passes ENABLE ROW LEVEL SECURITY;
 
--- Create policy to allow all access (since we are doing client-side sync with Anon key)
--- CREATE POLICY "Public Access" ON users FOR ALL USING (true) WITH CHECK (true);
--- CREATE POLICY "Public Access" ON passes FOR ALL USING (true) WITH CHECK (true);
+-- Create policy to allow all access (since we are doing client-side sync)
+CREATE POLICY "Public Access" ON users FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Public Access" ON passes FOR ALL USING (true) WITH CHECK (true);
+
