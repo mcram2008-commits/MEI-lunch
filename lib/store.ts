@@ -31,6 +31,7 @@ export interface Student extends User {
     section: string;
     parentPhone: string;
     studentPhone: string;
+    deviceId?: string; // For SIM/Device binding
 }
 
 export interface Advisor extends User {

@@ -44,6 +44,17 @@ export default function SimpleLogin() {
         }, 1000);
     };
 
+    const getDeviceId = () => {
+        if (typeof window === "undefined") return "server";
+        let id = localStorage.getItem("mei_device_sim_id");
+        if (!id) {
+            // Simulate a unique SIM/Device ID for this browser instance
+            id = "SIM_" + Math.random().toString(36).substring(2, 12).toUpperCase();
+            localStorage.setItem("mei_device_sim_id", id);
+        }
+        return id;
+    };
+
     const handleMobileVerify = (e: React.FormEvent) => {
         e.preventDefault();
         if (!tempUser) return;
@@ -57,24 +68,40 @@ export default function SimpleLogin() {
         setError("");
         setSimStatus("detecting");
 
+        const student = tempUser as Student;
+        const currentDeviceId = getDeviceId();
+        
         // Simulate SIM/Device verification logic
         setTimeout(() => {
-            const student = tempUser as Student;
-            
-            // Extract last 10 digits from both for comparison (handles +91 prefix if present)
+            // 1. Phone number comparison (last 10 digits)
             const registeredLast10 = student.studentPhone.replace(/\D/g, '').slice(-10);
             const inputLast10 = mobileNumber.replace(/\D/g, '').slice(-10);
             
-            if (registeredLast10 === inputLast10) {
-                setSimStatus("verified");
-                setTimeout(() => {
-                    completeLogin(tempUser);
-                }, 1000);
-            } else {
+            if (registeredLast10 !== inputLast10) {
                 setSimStatus("failed");
-                setError("SIM Verification Failed: Mobile number does not match registered SIM on this device.");
+                setError(`SIM Verification Failed: Number mismatch. Registration: XXXX${registeredLast10.slice(-4)}`);
                 setIsLoading(false);
+                return;
             }
+
+            // 2. SIM/Device Binding logic
+            if (student.deviceId && student.deviceId !== currentDeviceId) {
+                setSimStatus("failed");
+                setError("SIM Verification Failed: This account is bound to another SIM/Device. Access Denied.");
+                setIsLoading(false);
+                return;
+            }
+
+            // If no deviceId yet, bind it during the first login
+            if (!student.deviceId) {
+                GlobalStore.updateUser(student.id, { deviceId: currentDeviceId } as any);
+                student.deviceId = currentDeviceId; // Update local temp user too
+            }
+
+            setSimStatus("verified");
+            setTimeout(() => {
+                completeLogin(student);
+            }, 1000);
         }, 2500);
     };
 

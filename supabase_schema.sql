@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS users (
     "studentPhone" TEXT,
     "assignedClass" TEXT,
     phone TEXT,
+    "deviceId" TEXT, -- For SIM/Device binding
     "appliedAt" TIMESTAMPTZ DEFAULT NOW(),
     "updatedAt" TIMESTAMPTZ DEFAULT NOW()
 );
