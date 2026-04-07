@@ -15,11 +15,30 @@ export default function SimpleLogin() {
     const [isLoading, setIsLoading] = useState(false);
     const [simStatus, setSimStatus] = useState<"idle" | "detecting" | "verified" | "failed">("idle");
     
+    const [verificationMsg, setVerificationMsg] = useState("");
+    
     const router = useRouter();
 
     useEffect(() => {
         sessionStorage.removeItem("user");
     }, []);
+
+    const getDeviceId = () => {
+        if (typeof window === "undefined") return "server";
+        let id = localStorage.getItem("mei_device_sim_id");
+        if (!id) {
+            // Simulate a unique SIM/Device ID for this browser instance using hardware markers
+            const hardwareMarker = [
+                navigator.userAgent.length,
+                window.screen.width,
+                window.screen.height,
+                window.devicePixelRatio
+            ].join("-");
+            id = "SIM_" + hardwareMarker + "_" + Math.random().toString(36).substring(2, 8).toUpperCase();
+            localStorage.setItem("mei_device_sim_id", id);
+        }
+        return id;
+    };
 
     const handleInitialLogin = (e: React.FormEvent) => {
         e.preventDefault();
@@ -44,17 +63,6 @@ export default function SimpleLogin() {
         }, 1000);
     };
 
-    const getDeviceId = () => {
-        if (typeof window === "undefined") return "server";
-        let id = localStorage.getItem("mei_device_sim_id");
-        if (!id) {
-            // Simulate a unique SIM/Device ID for this browser instance
-            id = "SIM_" + Math.random().toString(36).substring(2, 12).toUpperCase();
-            localStorage.setItem("mei_device_sim_id", id);
-        }
-        return id;
-    };
-
     const handleMobileVerify = (e: React.FormEvent) => {
         e.preventDefault();
         if (!tempUser) return;
@@ -67,42 +75,47 @@ export default function SimpleLogin() {
         setIsLoading(true);
         setError("");
         setSimStatus("detecting");
+        setVerificationMsg("Verifying Mobile Number...");
 
         const student = tempUser as Student;
         const currentDeviceId = getDeviceId();
         
-        // Simulate SIM/Device verification logic
+        // Step 1: Phone number comparison
         setTimeout(() => {
-            // 1. Phone number comparison (last 10 digits)
             const registeredLast10 = student.studentPhone.replace(/\D/g, '').slice(-10);
             const inputLast10 = mobileNumber.replace(/\D/g, '').slice(-10);
             
             if (registeredLast10 !== inputLast10) {
                 setSimStatus("failed");
-                setError(`SIM Verification Failed: Number mismatch. Registration: XXXX${registeredLast10.slice(-4)}`);
+                setError(`Number Mismatch: This account is registered with another number.`);
                 setIsLoading(false);
                 return;
             }
 
-            // 2. SIM/Device Binding logic
-            if (student.deviceId && student.deviceId !== currentDeviceId) {
-                setSimStatus("failed");
-                setError("SIM Verification Failed: This account is bound to another SIM/Device. Access Denied.");
-                setIsLoading(false);
-                return;
-            }
-
-            // If no deviceId yet, bind it during the first login
-            if (!student.deviceId) {
-                GlobalStore.updateUser(student.id, { deviceId: currentDeviceId } as any);
-                student.deviceId = currentDeviceId; // Update local temp user too
-            }
-
-            setSimStatus("verified");
+            // Step 2: SIM/Device Binding logic
+            setVerificationMsg("Detecting SIM Card in Device...");
+            
             setTimeout(() => {
-                completeLogin(student);
-            }, 1000);
-        }, 2500);
+                if (student.deviceId && student.deviceId !== currentDeviceId) {
+                    setSimStatus("failed");
+                    setError("SIM Verification Failed: This account is bound to another SIM/Device hardware. Access Denied.");
+                    setIsLoading(false);
+                    return;
+                }
+
+                // If no deviceId yet, bind it during the first login
+                if (!student.deviceId) {
+                    GlobalStore.updateUser(student.id, { deviceId: currentDeviceId } as any);
+                    student.deviceId = currentDeviceId; 
+                }
+
+                setSimStatus("verified");
+                setVerificationMsg("SIM & Number Verified Successfully!");
+                setTimeout(() => {
+                    completeLogin(student);
+                }, 1000);
+            }, 2000);
+        }, 1500);
     };
 
     const completeLogin = (user: User) => {
@@ -176,8 +189,8 @@ export default function SimpleLogin() {
                         <div className="p-4 bg-blue-50 rounded-2xl flex items-start gap-4 mb-4">
                             <Smartphone className="text-blue-600 mt-1" size={24} />
                             <div>
-                                <p className="font-bold text-[#1e3a8a] text-sm">SIM Card Check Required</p>
-                                <p className="text-[10px] text-gray-500 font-medium">Please enter the mobile number of the SIM card currently in this device.</p>
+                                <p className="font-bold text-[#1e3a8a] text-sm">Hardware Verification</p>
+                                <p className="text-[10px] text-gray-500 font-medium">Verify registered mobile number and device SIM to continue.</p>
                             </div>
                         </div>
 
@@ -201,13 +214,13 @@ export default function SimpleLogin() {
                             {simStatus === "detecting" && (
                                 <div className="flex flex-col items-center animate-pulse">
                                     <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-2"></div>
-                                    <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest">Detecting SIM in Device...</p>
+                                    <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest">{verificationMsg}</p>
                                 </div>
                             )}
                             {simStatus === "verified" && (
                                 <div className="flex flex-col items-center text-green-600">
                                     <ShieldCheck size={48} className="mb-2" />
-                                    <p className="text-[10px] font-black uppercase tracking-widest">SIM Verified Successfully</p>
+                                    <p className="text-[10px] font-black uppercase tracking-widest">{verificationMsg}</p>
                                 </div>
                             )}
                         </div>
