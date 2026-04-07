@@ -25,7 +25,8 @@ export default function AdminPortal() {
     const [newUser, setNewUser] = useState({
         username: "", password: "", name: "", email: "", role: "student" as any,
         rollNo: "", department: "", year: "", section: "",
-        parentPhone: "+91", studentPhone: "+91", phone: "+91", assignedClass: "", profileImg: ""
+        parentPhone: "+91", studentPhone: "+91", phone: "+91", assignedClass: "", profileImg: "",
+        simSerial: ""
     });
 
     useEffect(() => {
@@ -90,7 +91,7 @@ export default function AdminPortal() {
             const id = Date.now().toString();
             const userBase = { id, username: newUser.username, password: newUser.password, name: newUser.name, email: newUser.email, role, profileImg: newUser.profileImg };
             if (role === "student") {
-                GlobalStore.addUser({ ...userBase, rollNo: newUser.rollNo, department: newUser.department, year: newUser.year, section: newUser.section, parentPhone: newUser.parentPhone, studentPhone: newUser.studentPhone } as Student);
+                GlobalStore.addUser({ ...userBase, rollNo: newUser.rollNo, department: newUser.department, year: newUser.year, section: newUser.section, parentPhone: newUser.parentPhone, studentPhone: newUser.studentPhone, simSerial: newUser.simSerial } as Student);
             } else {
                 GlobalStore.addUser({ ...userBase, department: newUser.department, assignedClass: newUser.assignedClass, phone: newUser.phone } as Advisor);
             }
@@ -99,7 +100,7 @@ export default function AdminPortal() {
     };
 
     const resetForm = () => {
-        setNewUser({ username: "", password: "", name: "", email: "", role: "student", rollNo: "", department: "", year: "", section: "", parentPhone: "+91", studentPhone: "+91", phone: "+91", assignedClass: "", profileImg: "" });
+        setNewUser({ username: "", password: "", name: "", email: "", role: "student", rollNo: "", department: "", year: "", section: "", parentPhone: "+91", studentPhone: "+91", phone: "+91", assignedClass: "", profileImg: "", simSerial: "" });
         setIsAddingUser(false);
         setIsEditingUser(false);
         setEditingUserId(null);
@@ -110,7 +111,8 @@ export default function AdminPortal() {
             username: user.username, password: user.password, name: user.name, email: user.email || "", role: user.role,
             rollNo: user.rollNo || "", department: user.department || "", year: user.year || "", section: user.section || "",
             parentPhone: user.parentPhone || "+91", studentPhone: user.studentPhone || "+91", phone: user.phone || "+91", assignedClass: user.assignedClass || "",
-            profileImg: user.profileImg || ""
+            profileImg: user.profileImg || "",
+            simSerial: user.simSerial || ""
         });
         setEditingUserId(user.id);
         setIsEditingUser(true);
@@ -570,6 +572,10 @@ export default function AdminPortal() {
                                                 <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Parent Phone</label>
                                                 <input placeholder="+91" required className="w-full h-14 bg-gray-50 rounded-xl px-5 font-bold" value={newUser.parentPhone} onChange={e => setNewUser({ ...newUser, parentPhone: formatPhone(e.target.value) })} />
                                             </div>
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">SIM Card ID (Reference)</label>
+                                            <input placeholder="ENTER SIM SERIAL (E.G. 8991...)" className="w-full h-14 bg-blue-50/50 rounded-xl px-5 font-bold border-2 border-dashed border-blue-100 outline-none focus:border-blue-500 transition-all text-center uppercase" value={newUser.simSerial} onChange={e => setNewUser({ ...newUser, simSerial: e.target.value })} />
                                         </div>
                                     </div>
                                 ) : (
