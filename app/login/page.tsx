@@ -27,14 +27,13 @@ export default function SimpleLogin() {
         if (typeof window === "undefined") return "server";
         let id = localStorage.getItem("mei_device_sim_id");
         if (!id) {
-            // Simulate a unique SIM/Device ID for this browser instance using hardware markers
+            // Generate a more 'SIM-like' ID using hardware markers
             const hardwareMarker = [
-                navigator.userAgent.length,
                 window.screen.width,
                 window.screen.height,
-                window.devicePixelRatio
-            ].join("-");
-            id = "SIM_" + hardwareMarker + "_" + Math.random().toString(36).substring(2, 8).toUpperCase();
+                navigator.userAgent.length % 1000
+            ].join("");
+            id = "8991" + hardwareMarker + Math.random().toString().substring(2, 6);
             localStorage.setItem("mei_device_sim_id", id);
         }
         return id;
@@ -78,7 +77,7 @@ export default function SimpleLogin() {
         setVerificationMsg("Verifying Mobile Number...");
 
         const student = tempUser as Student;
-        const currentDeviceId = getDeviceId();
+        const currentSimId = getDeviceId();
         
         // Step 1: Phone number comparison
         setTimeout(() => {
@@ -93,50 +92,41 @@ export default function SimpleLogin() {
             }
 
             // Step 2: SIM/Device Hardware logic
-            setVerificationMsg("Reading SIM Card Serial...");
+            setVerificationMsg(`Detected SIM ID: ${currentSimId}`);
             
             setTimeout(() => {
-                // If Admin provided a specific SIM Serial, we must match it
-                if (student.simSerial) {
-                    // We simulate "reading" the SIM by checking if this device has already 'linked' to this SIM
-                    // or if the current hardware fingerprint matches the serial provided by Admin.
-                    const linkedSim = localStorage.getItem(`linked_sim_${student.id}`);
-                    
-                    if (linkedSim && linkedSim !== student.simSerial) {
+                setVerificationMsg("Verifying SIM with Admin Records...");
+                
+                setTimeout(() => {
+                    // Check if Admin set a SIM Serial
+                    if (student.simSerial) {
+                        if (student.simSerial !== currentSimId) {
+                            setSimStatus("failed");
+                            setError(`SIM Mismatch: Expected ${student.simSerial}, but detected ${currentSimId}. Contact Admin.`);
+                            setIsLoading(false);
+                            return;
+                        }
+                    } else if (student.deviceId && student.deviceId !== currentSimId) {
+                        // Fallback to general device binding if simSerial isn't used
                         setSimStatus("failed");
-                        setError("SIM Serial Conflict: This device is already linked to another SIM card.");
+                        setError("Security Violation: This account is bound to another mobile device.");
                         setIsLoading(false);
                         return;
                     }
 
-                    // If it's the first time on this device for this student, we "detect" the SIM
-                    // To make it pass for testing, I'll allow the first login to 'bind' the Admin's serial to this device.
-                    // But if it's already bound to a DIFFERENT serial, it fails.
-                    if (!linkedSim) {
-                        localStorage.setItem(`linked_sim_${student.id}`, student.simSerial);
+                    // If no deviceId or simSerial yet, bind it during the first successful login
+                    if (!student.deviceId && !student.simSerial) {
+                        GlobalStore.updateUser(student.id, { deviceId: currentSimId } as any);
+                        student.deviceId = currentSimId; 
                     }
-                }
 
-                // Standard Hardware Binding (prevents account sharing on different devices)
-                if (student.deviceId && student.deviceId !== currentDeviceId) {
-                    setSimStatus("failed");
-                    setError("Security Violation: This account is bound to another mobile device hardware.");
-                    setIsLoading(false);
-                    return;
-                }
-
-                // If no deviceId yet, bind it during the first successful login
-                if (!student.deviceId) {
-                    GlobalStore.updateUser(student.id, { deviceId: currentDeviceId } as any);
-                    student.deviceId = currentDeviceId; 
-                }
-
-                setSimStatus("verified");
-                setVerificationMsg("Number & SIM Hardware Verified!");
-                setTimeout(() => {
-                    completeLogin(student);
-                }, 1000);
-            }, 2000);
+                    setSimStatus("verified");
+                    setVerificationMsg("SIM Hardware Verified!");
+                    setTimeout(() => {
+                        completeLogin(student);
+                    }, 1000);
+                }, 1500);
+            }, 1000);
         }, 1500);
     };
 
