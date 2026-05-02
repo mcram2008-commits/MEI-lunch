@@ -34,7 +34,7 @@ export default function StudentPortal() {
     const router = useRouter();
 
     useEffect(() => {
-        const savedUser = sessionStorage.getItem("user");
+        const savedUser = localStorage.getItem("user");
         if (!savedUser) { router.push("/login"); return; }
         const user = JSON.parse(savedUser) as Student;
         if (user.role !== "student") { router.push("/login"); return; }
@@ -202,13 +202,13 @@ export default function StudentPortal() {
                     
                     // Simulation: First attempt in this pass session will FAIL to show strictness
                     const verifKey = `fail_sim_${selectedPass.id}`;
-                    const hasFailedOnce = sessionStorage.getItem(verifKey);
+                    const hasFailedOnce = localStorage.getItem(verifKey);
 
                     let matchScore = 0;
                     if (!hasFailedOnce) {
                         // FORCE FAIL on first try to show rejection logic
                         matchScore = 65 + (Math.random() * 12); 
-                        sessionStorage.setItem(verifKey, "true");
+                        localStorage.setItem(verifKey, "true");
                     } else {
                         // SUCCESS on retry
                         matchScore = (isDemo || hasProfile) ? (94 + Math.random() * 5) : (88 + Math.random() * 8);
@@ -296,7 +296,7 @@ export default function StudentPortal() {
 
     if (!student) return null;
 
-    const handleLogout = () => { sessionStorage.removeItem("user"); router.push("/login"); };
+    const handleLogout = () => { localStorage.removeItem("user"); router.push("/login"); };
 
     return (
         <div className="min-h-screen bg-[#f3f4f9] pb-10">

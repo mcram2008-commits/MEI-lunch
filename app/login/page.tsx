@@ -8,36 +8,21 @@ import { User as UserIcon, Lock, Phone, ShieldCheck, Smartphone } from "lucide-r
 export default function SimpleLogin() {
     const [username, setUsername] = useState("");
     const [password, setPassword] = useState("");
-    const [mobileNumber, setMobileNumber] = useState("");
-    const [loginStep, setLoginStep] = useState<"credentials" | "mobile">("credentials");
+    const [loginStep, setLoginStep] = useState<"credentials" | "advisor_approval">("credentials");
     const [tempUser, setTempUser] = useState<User | null>(null);
     const [error, setError] = useState("");
     const [isLoading, setIsLoading] = useState(false);
-    const [simStatus, setSimStatus] = useState<"idle" | "detecting" | "verified" | "failed">("idle");
-    
-    const [verificationMsg, setVerificationMsg] = useState("");
     
     const router = useRouter();
 
     useEffect(() => {
-        sessionStorage.removeItem("user");
-    }, []);
-
-    const getDeviceId = () => {
-        if (typeof window === "undefined") return "server";
-        let id = localStorage.getItem("mei_device_sim_id");
-        if (!id) {
-            // Generate a more 'SIM-like' ID using hardware markers
-            const hardwareMarker = [
-                window.screen.width,
-                window.screen.height,
-                navigator.userAgent.length % 1000
-            ].join("");
-            id = "8991" + hardwareMarker + Math.random().toString().substring(2, 6);
-            localStorage.setItem("mei_device_sim_id", id);
+        // If already logged in, redirect them
+        const savedUser = localStorage.getItem("user");
+        if (savedUser) {
+            const u = JSON.parse(savedUser);
+            completeLogin(u);
         }
-        return id;
-    };
+    }, []);
 
     const handleInitialLogin = (e: React.FormEvent) => {
         e.preventDefault();
@@ -49,9 +34,17 @@ export default function SimpleLogin() {
 
             if (user) {
                 if (user.role === "student") {
-                    setTempUser(user);
-                    setLoginStep("mobile");
-                    setIsLoading(false);
+                    const student = user as Student;
+                    if (student.loginApproved) {
+                        completeLogin(student);
+                    } else {
+                        if (!student.loginRequested) {
+                            GlobalStore.updateUser(student.id, { loginRequested: true } as any);
+                        }
+                        setTempUser(student);
+                        setLoginStep("advisor_approval");
+                        setIsLoading(false);
+                    }
                 } else {
                     completeLogin(user);
                 }
@@ -62,76 +55,18 @@ export default function SimpleLogin() {
         }, 1000);
     };
 
-    const handleMobileVerify = (e: React.FormEvent) => {
-        e.preventDefault();
+    const handleRefreshStatus = () => {
         if (!tempUser) return;
-
-        if (mobileNumber.length !== 10) {
-            setError("Please enter a valid 10-digit mobile number.");
-            return;
+        const updatedUser = GlobalStore.getUsers().find(u => u.id === tempUser.id) as Student;
+        if (updatedUser?.loginApproved) {
+            completeLogin(updatedUser);
+        } else {
+            setError("Still waiting for advisor approval...");
         }
-
-        setIsLoading(true);
-        setError("");
-        setSimStatus("detecting");
-        setVerificationMsg("Verifying Mobile Number...");
-
-        const student = tempUser as Student;
-        const currentSimId = getDeviceId();
-        
-        // Step 1: Phone number comparison
-        setTimeout(() => {
-            const registeredLast10 = student.studentPhone.replace(/\D/g, '').slice(-10);
-            const inputLast10 = mobileNumber.replace(/\D/g, '').slice(-10);
-            
-            if (registeredLast10 !== inputLast10) {
-                setSimStatus("failed");
-                setError(`Number Mismatch: This account is registered with another number.`);
-                setIsLoading(false);
-                return;
-            }
-
-            // Step 2: SIM/Device Hardware logic
-            setVerificationMsg(`Detected SIM ID: ${currentSimId}`);
-            
-            setTimeout(() => {
-                setVerificationMsg("Verifying SIM with Admin Records...");
-                
-                setTimeout(() => {
-                    // Check if Admin set a SIM Serial
-                    if (student.simSerial) {
-                        if (student.simSerial !== currentSimId) {
-                            setSimStatus("failed");
-                            setError(`SIM Mismatch: Expected ${student.simSerial}, but detected ${currentSimId}. Contact Admin.`);
-                            setIsLoading(false);
-                            return;
-                        }
-                    } else if (student.deviceId && student.deviceId !== currentSimId) {
-                        // Fallback to general device binding if simSerial isn't used
-                        setSimStatus("failed");
-                        setError("Security Violation: This account is bound to another mobile device.");
-                        setIsLoading(false);
-                        return;
-                    }
-
-                    // If no deviceId or simSerial yet, bind it during the first successful login
-                    if (!student.deviceId && !student.simSerial) {
-                        GlobalStore.updateUser(student.id, { deviceId: currentSimId } as any);
-                        student.deviceId = currentSimId; 
-                    }
-
-                    setSimStatus("verified");
-                    setVerificationMsg("SIM Hardware Verified!");
-                    setTimeout(() => {
-                        completeLogin(student);
-                    }, 1000);
-                }, 1500);
-            }, 1000);
-        }, 1500);
     };
 
     const completeLogin = (user: User) => {
-        sessionStorage.setItem("user", JSON.stringify(user));
+        localStorage.setItem("user", JSON.stringify(user));
         if (user.role === "admin") router.push("/admin");
         else if (user.role === "advisor") router.push("/advisor");
         else if (user.role === "watchman") router.push("/watchman");
@@ -150,7 +85,7 @@ export default function SimpleLogin() {
 
             <div className="max-w-md mx-auto p-8 -mt-8 bg-white rounded-t-3xl shadow-2xl relative z-10">
                 <h2 className="text-2xl font-bold text-gray-800 mb-8 border-b pb-4">
-                    {loginStep === "credentials" ? "Sign In" : "Device Verification"}
+                    {loginStep === "credentials" ? "Sign In" : "Advisor Approval"}
                 </h2>
 
                 {error && (
@@ -197,62 +132,33 @@ export default function SimpleLogin() {
                         </button>
                     </form>
                 ) : (
-                    <form onSubmit={handleMobileVerify} className="space-y-6">
-                        <div className="p-4 bg-blue-50 rounded-2xl flex items-start gap-4 mb-4">
-                            <Smartphone className="text-blue-600 mt-1" size={24} />
-                            <div>
-                                <p className="font-bold text-[#1e3a8a] text-sm">Hardware Verification</p>
-                                <p className="text-[10px] text-gray-500 font-medium">Verify registered mobile number and device SIM to continue.</p>
-                            </div>
+                    <div className="space-y-6 text-center py-6">
+                        <div className="w-20 h-20 bg-orange-50 text-orange-600 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
+                            <ShieldCheck size={40} />
                         </div>
-
-                        <div className="space-y-2">
-                            <label className="text-xs font-black text-gray-400 uppercase tracking-widest ml-1">Mobile Number</label>
-                            <div className="relative">
-                                <Phone className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300" size={18} />
-                                <input
-                                    type="tel"
-                                    placeholder="Enter 10-digit mobile number"
-                                    maxLength={10}
-                                    className="w-full h-14 pl-12 pr-4 bg-gray-50 border-none rounded-xl font-bold text-gray-700 focus:bg-white focus:ring-2 ring-blue-100 outline-none transition-all"
-                                    value={mobileNumber}
-                                    onChange={e => setMobileNumber(e.target.value.replace(/\D/g, '').slice(0, 10))}
-                                    required
-                                />
-                            </div>
-                        </div>
-
-                        <div className="flex flex-col items-center justify-center py-4">
-                            {simStatus === "detecting" && (
-                                <div className="flex flex-col items-center animate-pulse">
-                                    <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-2"></div>
-                                    <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest">{verificationMsg}</p>
-                                </div>
-                            )}
-                            {simStatus === "verified" && (
-                                <div className="flex flex-col items-center text-green-600">
-                                    <ShieldCheck size={48} className="mb-2" />
-                                    <p className="text-[10px] font-black uppercase tracking-widest">{verificationMsg}</p>
-                                </div>
-                            )}
-                        </div>
-
-                        <div className="flex gap-4">
+                        <h3 className="font-black text-[#1e3a8a] text-xl uppercase tracking-tight">Pending Approval</h3>
+                        <p className="text-xs text-gray-500 font-bold px-4 leading-relaxed">
+                            Your login request has been sent to your Class Advisor. Please wait for them to approve your login request before proceeding.
+                        </p>
+                        
+                        <div className="pt-4 flex flex-col gap-3">
                             <button
-                                type="button"
-                                onClick={() => setLoginStep("credentials")}
-                                className="flex-1 h-14 bg-gray-100 text-gray-500 rounded-xl font-bold uppercase tracking-widest"
+                                onClick={handleRefreshStatus}
+                                className="w-full h-14 bg-[#1e3a8a] text-white rounded-xl font-bold text-sm hover:shadow-lg transition-transform active:scale-95 uppercase tracking-widest shadow-blue-200"
                             >
-                                Back
+                                Refresh Status
                             </button>
                             <button
-                                disabled={isLoading || simStatus === "verified"}
-                                className="flex-[2] h-14 bg-[#1e3a8a] text-white rounded-xl font-bold text-lg hover:shadow-lg transition-transform active:scale-95 disabled:opacity-50 uppercase tracking-widest shadow-blue-200"
+                                onClick={() => {
+                                    setLoginStep("credentials");
+                                    setError("");
+                                }}
+                                className="w-full h-14 bg-gray-100 text-gray-600 rounded-xl font-bold text-sm hover:shadow-lg transition-transform active:scale-95 uppercase tracking-widest"
                             >
-                                {isLoading ? "Verifying SIM..." : "Verify & Login"}
+                                Back to Login
                             </button>
                         </div>
-                    </form>
+                    </div>
                 )}
 
                 <div className="mt-12 text-center text-gray-300 text-[10px] font-bold uppercase tracking-widest">

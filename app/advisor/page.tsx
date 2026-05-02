@@ -15,13 +15,14 @@ export default function AdvisorPortal() {
     const [latePasses, setLatePasses] = useState<Pass[]>([]);
     const [notEntryPasses, setNotEntryPasses] = useState<Pass[]>([]);
     const [duplicatePasses, setDuplicatePasses] = useState<Pass[]>([]);
+    const [loginRequests, setLoginRequests] = useState<Student[]>([]);
     const [isMenuOpen, setIsMenuOpen] = useState(false);
-    const [activeTab, setActiveTab] = useState<"pending" | "profile" | "history" | "late">("pending");
+    const [activeTab, setActiveTab] = useState<"pending" | "logins" | "profile" | "history" | "late">("pending");
     const [allAdvisors, setAllAdvisors] = useState<Advisor[]>([]);
     const router = useRouter();
 
     useEffect(() => {
-        const savedUser = sessionStorage.getItem("user");
+        const savedUser = localStorage.getItem("user");
         if (!savedUser) { router.push("/login"); return; }
         const user = JSON.parse(savedUser) as Advisor;
         if (user.role !== "advisor") { router.push("/login"); return; }
@@ -39,6 +40,12 @@ export default function AdvisorPortal() {
                 return p.type === "leave" && p.status === "pending" && studentClass === user.assignedClass.toUpperCase();
             });
             setRequests(pending);
+
+            const loginReqs = allStudents.filter(s => {
+                const studentClass = `${s.department}-${s.year}-${s.section}`.toUpperCase();
+                return studentClass === user.assignedClass.toUpperCase() && s.loginRequested && !s.loginApproved;
+            });
+            setLoginRequests(loginReqs);
 
             const history = allPasses.filter(p => {
                 const student = allStudents.find(s => s.id === p.studentId);
@@ -113,7 +120,7 @@ export default function AdvisorPortal() {
         }
     };
 
-    const handleLogout = () => { sessionStorage.removeItem("user"); router.push("/login"); };
+    const handleLogout = () => { localStorage.removeItem("user"); router.push("/login"); };
 
     if (!advisor) return null;
 
@@ -127,10 +134,11 @@ export default function AdvisorPortal() {
                 <div className="ml-6 flex items-center gap-3">
                     <h1 className="font-bold text-lg tracking-tight capitalize">
                         {activeTab === 'pending' ? 'Advisor Approval' : 
+                         activeTab === 'logins' ? 'Login Approvals' : 
                          activeTab === 'history' ? 'Pass History' : 
                          activeTab === 'late' ? 'Overdue List' : 'Profile'}
                     </h1>
-                    {(notEntryPasses.length + duplicatePasses.length) > 0 && <span className="bg-red-500 text-white text-[10px] w-5 h-5 rounded-full flex items-center justify-center animate-pulse">{notEntryPasses.length + duplicatePasses.length}</span>}
+                    {(notEntryPasses.length + duplicatePasses.length + loginRequests.length) > 0 && <span className="bg-red-500 text-white text-[10px] w-5 h-5 rounded-full flex items-center justify-center animate-pulse">{notEntryPasses.length + duplicatePasses.length + loginRequests.length}</span>}
                 </div>
             </header>
 
@@ -160,6 +168,12 @@ export default function AdvisorPortal() {
                             <Inbox size={20} /> Leave Inbox
                         </button>
                         <button
+                            onClick={() => { setActiveTab("logins"); setIsMenuOpen(false); }}
+                            className={`w-full flex items-center gap-4 p-4 rounded-xl font-bold transition-colors ${activeTab === 'logins' ? 'bg-white/10' : 'hover:bg-white/5'}`}
+                        >
+                            <UserCheck size={20} /> Login Requests {loginRequests.length > 0 && <span className="ml-auto bg-blue-600 px-2 py-0.5 rounded text-[8px]">{loginRequests.length}</span>}
+                        </button>
+                        <button
                             onClick={() => { setActiveTab("late"); setIsMenuOpen(false); }}
                             className={`w-full flex items-center gap-4 p-4 rounded-xl font-bold transition-colors ${activeTab === 'late' ? 'bg-red-500/20 text-red-200' : 'hover:bg-white/5 opacity-70'}`}
                         >
@@ -175,7 +189,7 @@ export default function AdvisorPortal() {
                             onClick={() => { setActiveTab("profile"); setIsMenuOpen(false); }}
                             className={`w-full flex items-center gap-4 p-4 rounded-xl font-bold transition-colors ${activeTab === 'profile' ? 'bg-white/10' : 'hover:bg-white/5'}`}
                         >
-                            <UserCheck size={20} /> My Profile
+                            <User size={20} /> My Profile
                         </button>
                         <hr className="border-white/10 my-6" />
                         <button onClick={handleLogout} className="w-full flex items-center gap-4 p-4 rounded-xl font-bold text-red-100 hover:bg-red-500/10">
@@ -215,6 +229,32 @@ export default function AdvisorPortal() {
                                     </div>
                                 );
                             })
+                        )}
+                    </div>
+                )}
+
+                {activeTab === "logins" && (
+                    <div className="animate-in fade-in space-y-6">
+                        <div className="flex items-center gap-2 mb-4">
+                            <User size={20} className="text-[#1e3a8a]" />
+                            <h2 className="font-black text-gray-500 uppercase tracking-widest text-xs">Device Login Requests</h2>
+                        </div>
+
+                        {loginRequests.length === 0 ? (
+                            <div className="text-center py-24 bg-white rounded-3xl border border-gray-100 italic font-bold text-gray-300">No pending login requests</div>
+                        ) : (
+                            loginRequests.map(student => (
+                                <div key={student.id} className="bg-white rounded-2xl shadow-sm border p-6 space-y-4 animate-in slide-in-from-bottom-4">
+                                    <div className="flex items-center gap-4 border-b pb-4">
+                                        <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center font-black">{student.name.charAt(0)}</div>
+                                        <div><p className="font-black text-[#1e3a8a]">{student.name}</p><p className="text-[10px] text-gray-400 font-bold uppercase">{student.rollNo} • {student.studentPhone}</p></div>
+                                    </div>
+                                    <div className="flex gap-4">
+                                        <button onClick={() => GlobalStore.updateUser(student.id, { loginRequested: false } as any)} className="flex-1 py-3 bg-red-50 text-red-600 rounded-xl font-black text-xs uppercase tracking-widest">Reject</button>
+                                        <button onClick={() => GlobalStore.updateUser(student.id, { loginApproved: true } as any)} className="flex-1 py-3 bg-[#1e3a8a] text-white rounded-xl font-black text-xs uppercase tracking-widest shadow-lg shadow-blue-100">Approve Login</button>
+                                    </div>
+                                </div>
+                            ))
                         )}
                     </div>
                 )}

@@ -7,7 +7,7 @@ export default function Home() {
     const router = useRouter();
 
     useEffect(() => {
-        const user = sessionStorage.getItem("user");
+        const user = localStorage.getItem("user");
         if (user) {
             const parsed = JSON.parse(user);
             if (parsed.role === "admin") router.push("/admin");

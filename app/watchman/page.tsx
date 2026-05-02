@@ -16,7 +16,7 @@ export default function SimpleWatchman() {
     const router = useRouter();
 
     useEffect(() => {
-        const savedUser = sessionStorage.getItem("user");
+        const savedUser = localStorage.getItem("user");
         if (!savedUser) { router.push("/login"); return; }
         const user = JSON.parse(savedUser) as User;
         if (user.role !== "watchman") { router.push("/login"); return; }
@@ -96,7 +96,7 @@ export default function SimpleWatchman() {
     const currentPass = GlobalStore.getPasses().find(p => p.id === currentPassId);
     const studentForPass = MOCK_STUDENTS().find(s => s.id === currentPass?.studentId);
 
-    const logout = () => { sessionStorage.removeItem("user"); router.push("/login"); };
+    const logout = () => { localStorage.removeItem("user"); router.push("/login"); };
 
     if (!watchman) return null;
 

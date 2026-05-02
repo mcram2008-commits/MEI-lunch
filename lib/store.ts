@@ -33,6 +33,8 @@ export interface Student extends User {
     studentPhone: string;
     deviceId?: string; // Hardware Binding
     simSerial?: string; // SIM Serial Number (set by Admin or captured)
+    loginRequested?: boolean; // Student requested login
+    loginApproved?: boolean; // Advisor approved login
 }
 
 export interface Advisor extends User {

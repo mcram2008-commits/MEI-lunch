@@ -30,7 +30,7 @@ export default function AdminPortal() {
     });
 
     useEffect(() => {
-        const saved = sessionStorage.getItem("user");
+        const saved = localStorage.getItem("user");
         if (!saved || JSON.parse(saved).role !== "admin") { router.push("/login"); return; }
         const update = () => { setPasses([...GlobalStore.getPasses()]); setUsers([...GlobalStore.getUsers()]); };
         update();
@@ -119,7 +119,7 @@ export default function AdminPortal() {
         setIsAddingUser(true);
     };
 
-    const handleLogout = () => { sessionStorage.clear(); router.push("/login"); };
+    const handleLogout = () => { localStorage.removeItem("user"); router.push("/login"); };
 
     const generatePDF = () => {
         const doc = new jsPDF();
